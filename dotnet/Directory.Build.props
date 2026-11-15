@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Unity 밖 빌드 공통 설정.
+    소스 파일은 Assets/ 아래 한 곳에만 두고, 여기 프로젝트는 그 파일을 가져다 컴파일만 한다.
+    Unity 6.3이 쓰는 언어 버전(C# 9)에 맞춰, Unity에서 안 되는 문법이 여기서 먼저 걸리게 한다.
+  -->
+  <PropertyGroup>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</RepoRoot>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>ZodiacSignGuardian.Data</AssemblyName>
+    <RootNamespace>ZodiacSignGuardian.Data</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(RepoRoot)/Assets/Scripts/Data/**/*.cs" />
+  </ItemGroup>
+</Project>

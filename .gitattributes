@@ -1,0 +1,18 @@
+* text=auto
+
+*.cs      text diff=csharp
+*.csproj  text
+*.sln     text eol=crlf
+*.asmdef  text
+*.json    text
+*.csv     text
+*.md      text
+*.meta    text
+*.unity   text merge=unityyamlmerge
+*.prefab  text merge=unityyamlmerge
+*.asset   text merge=unityyamlmerge
+
+*.png     binary
+*.psd     binary
+*.wav     binary
+*.ogg     binary

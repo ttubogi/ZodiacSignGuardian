@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    저장소 구조 검사 (Unity 밖에서만 돈다).
+    asmdef 참조 방향, Unity 비참조 설정, 규칙 파일(AGENTS.md·CLAUDE.md)이 설계서와 맞는지 본다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ZodiacSignGuardian.Structure.Tests</AssemblyName>
+    <RootNamespace>ZodiacSignGuardian.Structure.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- Unity에서 컴파일되지 않는 dotnet 전용 프로젝트라 최신 기능을 써도 된다. -->
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+</Project>

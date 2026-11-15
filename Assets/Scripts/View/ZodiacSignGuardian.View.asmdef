@@ -1,0 +1,16 @@
+{
+  "name": "ZodiacSignGuardian.View",
+  "rootNamespace": "ZodiacSignGuardian.View",
+  "references": [
+    "ZodiacSignGuardian.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
