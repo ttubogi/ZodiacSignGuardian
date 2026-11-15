@@ -2,7 +2,8 @@
   "name": "ZodiacSignGuardian.Services",
   "rootNamespace": "ZodiacSignGuardian.Services",
   "references": [
-    "ZodiacSignGuardian.Core"
+    "ZodiacSignGuardian.Core",
+    "ZodiacSignGuardian.Data"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

@@ -10,7 +10,7 @@
 | `Assets/Scripts/Data` | 표 정의·검사 | 없음 | Claude |
 | `Assets/Scripts/Core` | 판정 | Data | Claude |
 | `Assets/Tests/Core` | 판정·표 테스트 (Unity·dotnet 양쪽에서 실행) | Core, Data | Claude |
-| `Assets/Scripts/Services` | 저장·서버 시각 호출·광고·표 읽기·앱 일시정지 | Core | Codex |
+| `Assets/Scripts/Services` | 저장·서버 시각 호출·광고·표 읽기·앱 일시정지 | Core, Data | Codex |
 | `Assets/Scripts/View` | 화면 | Core | Codex |
 | `Tools/DataGen` | 스테이지·몬스터·보상 표 생성 (Core 참조 안 함) | — | Claude |
 | `Cloud` | Cloud Code (서버 시각) | — | Claude |

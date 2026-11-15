@@ -80,7 +80,8 @@ namespace ZodiacSignGuardian.Structure.Tests
         {
             [P + "Data"] = new Expected { Folder = "Assets/Scripts/Data", MustBeEngineFree = true },
             [P + "Core"] = new Expected { Folder = "Assets/Scripts/Core", ProjectReferences = new[] { P + "Data" }, MustBeEngineFree = true },
-            [P + "Services"] = new Expected { Folder = "Assets/Scripts/Services", ProjectReferences = new[] { P + "Core" } },
+            // Services는 표를 읽으므로 Data도 참조한다 (C0 검토, 2026-11-15)
+            [P + "Services"] = new Expected { Folder = "Assets/Scripts/Services", ProjectReferences = new[] { P + "Core", P + "Data" } },
             [P + "View"] = new Expected { Folder = "Assets/Scripts/View", ProjectReferences = new[] { P + "Core" } },
             [P + "Core.Tests"] = new Expected { Folder = "Assets/Tests/Core", ProjectReferences = new[] { P + "Core", P + "Data" }, IsEditorTest = true },
         };
