@@ -1,0 +1,4 @@
+rule_id,period,reset_hour,weekday,cycle_days,utc_offset_min,sync_interval_min,anchor_valid_min,max_rtt_sec
+daily,daily,5,,,540,5,10,5
+weekly,weekly,5,mon,,540,5,10,5
+attendance_cycle,cycle,,,28,540,5,10,5

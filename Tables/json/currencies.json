@@ -1,0 +1,10 @@
+{
+  "table": "currencies",
+  "columns": ["currency_id", "name_ko", "number_type", "build"],
+  "rows": [
+    {"currency_id": "stardust", "name_ko": "별가루", "number_type": "game_number", "build": "m1"},
+    {"currency_id": "galaxy_crystal", "name_ko": "은하수정", "number_type": "integer", "build": "m1"},
+    {"currency_id": "star_fragment", "name_ko": "별조각", "number_type": "integer", "build": "m1"},
+    {"currency_id": "enhance_stone", "name_ko": "강화석", "number_type": "integer", "build": "m1"}
+  ]
+}

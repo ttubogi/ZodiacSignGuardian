@@ -1,0 +1,7 @@
+{
+  "table": "offline_reward",
+  "columns": ["max_minutes", "min_minutes", "ad_multiplier", "max_frame_sec"],
+  "rows": [
+    {"max_minutes": 720, "min_minutes": 1, "ad_multiplier": 2, "max_frame_sec": 1}
+  ]
+}

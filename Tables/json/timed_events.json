@@ -1,0 +1,5 @@
+{
+  "table": "timed_events",
+  "columns": ["event_id", "weekdays", "start_time", "end_time", "reward_currency"],
+  "rows": []
+}

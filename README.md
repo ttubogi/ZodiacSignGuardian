@@ -19,6 +19,19 @@
 참조 방향은 asmdef로 막고, `dotnet/Structure.Tests`가 설계서 4절 표와 대조한다.
 Core·Data는 `noEngineReferences: true`라 Unity API를 쓰면 컴파일되지 않는다.
 
+## 표 (운영 숫자)
+
+| 폴더 | 내용 |
+|---|---|
+| `Tables/csv` | 원본. 사람이 고치는 곳. 표 12개 = 날짜별 규칙 7개 + 정의 표 5개 (설계서 v0.7 2절) |
+| `Tables/json` | 변환 결과. 손으로 고치지 않는다 |
+
+- CSV는 **UTF-8**만 받는다. Excel에서는 "CSV UTF-8(쉼표로 분리)"로 저장한다. (그냥 "CSV"는 CP949라 거절된다)
+- 고친 뒤 변환: `dotnet run --project dotnet/TableBuild` — 검사 10개를 모두 통과해야 JSON을 쓰고, 하나라도 걸리면 아무것도 쓰지 않는다.
+- 확인만: `dotnet run --project dotnet/TableBuild -- check` — 저장소의 JSON이 CSV와 같은지 본다. (`dotnet test`에도 같은 검사가 있다)
+- 문제는 `[검사3] attendance.csv 15줄 amount: ...`처럼 종류·파일·줄·열과 함께 나온다. `형식`은 검사 10개 밖의 모양 문제(머리줄, 칸 수, 값 모양 등)다.
+- 정의 표의 값은 아직 임시다. 실제 숫자는 '밸런스 기초 문서'에서 정한다.
+
 ## Unity 밖 테스트
 
 .NET 8 SDK가 필요하다.

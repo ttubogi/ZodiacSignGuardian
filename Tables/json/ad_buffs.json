@@ -1,0 +1,7 @@
+{
+  "table": "ad_buffs",
+  "columns": ["buff_id", "multiplier", "duration_min", "build"],
+  "rows": [
+    {"buff_id": "hunt_double", "multiplier": 2, "duration_min": 30, "build": "m1"}
+  ]
+}

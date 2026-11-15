@@ -1,0 +1,10 @@
+{
+  "table": "stats",
+  "columns": ["stat_id", "name_ko", "max_level", "build"],
+  "rows": [
+    {"stat_id": "attack", "name_ko": "공격력", "max_level": 0, "build": "m1"},
+    {"stat_id": "max_hp", "name_ko": "체력", "max_level": 0, "build": "m1"},
+    {"stat_id": "crit_rate", "name_ko": "치명타 확률", "max_level": 1000, "build": "m1"},
+    {"stat_id": "crit_damage", "name_ko": "치명타 피해", "max_level": 0, "build": "m1"}
+  ]
+}
