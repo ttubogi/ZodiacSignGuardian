@@ -1,0 +1,35 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+crashlytics-build.properties
+
+# Unity가 만드는 IDE 파일 (루트의 .csproj/.sln만, dotnet/ 아래는 저장소에 둔다)
+/*.csproj
+/*.sln
+/*.slnx
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Unity 밖 빌드 (dotnet/)
+dotnet/**/bin/
+dotnet/**/obj/
+dotnet/TestResults/
+Tools/**/bin/
+Tools/**/obj/

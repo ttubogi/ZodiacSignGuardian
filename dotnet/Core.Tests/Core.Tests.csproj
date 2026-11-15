@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Assets/Tests/Core의 테스트를 Unity 밖에서 돌린다.
+    같은 파일이 Unity Test Framework(내장 NUnit 3.5 계열)에서도 컴파일되어야 하므로
+    NUnit 3.x를 쓰고, Assert.That(제약) 형태만 쓴다.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ZodiacSignGuardian.Core.Tests</AssemblyName>
+    <RootNamespace>ZodiacSignGuardian.Core.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(RepoRoot)/Assets/Tests/Core/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/Core.csproj" />
+    <ProjectReference Include="../Data/Data.csproj" />
+  </ItemGroup>
+</Project>
