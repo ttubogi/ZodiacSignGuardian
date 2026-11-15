@@ -111,6 +111,9 @@ namespace ZodiacSignGuardian.Data.Tables
             }
         }
 
+        /// <summary>검사 4 문구에 보여 줄 빠진 구간 수. 넘으면 "외 N구간"으로 줄인다.</summary>
+        public const int MaxGapsShown = 10;
+
         // 4. 출석은 1일부터 마지막 날까지 빠짐없이 한 번씩 있다. (겹침은 검사 1)
         //    마지막 날은 reset_rules의 cycle 규칙(출석 주기, 하나뿐)의 cycle_days와 같다. (C1 검토, 2026-11-15)
         static void Check4_Attendance(TableSet set, List<TableIssue> issues)
@@ -122,17 +125,24 @@ namespace ZodiacSignGuardian.Data.Tables
                 Add(issues, TableIssueKind.Check4, name, 0, null, "출석 보상이 하나도 없음");
                 return;
             }
-            var days = new HashSet<long>(t.Rows.Where(r => r.IsValid("day")).Select(r => r.Long("day")));
+            // 읽은 날만 정렬해 이웃한 날 사이의 빈 구간을 찾는다. 일의 양은 날 숫자의 크기가 아니라 행 수에 비례한다.
+            // (Codex 검토 2026-11-15: 1부터 마지막 날까지 하나씩 세면 day 하나가 10억이면 10억 번 돌고 메모리가 바닥남)
+            var days = t.Rows.Where(r => r.IsValid("day")).Select(r => r.Long("day")).Distinct().OrderBy(d => d).ToList();
             if (days.Count == 0) return; // 날을 하나도 읽지 못함 (이미 문제로 남음)
-            var last = days.Max();
-            var missing = new List<long>();
-            for (long d = 1; d <= last; d++)
+            var last = days[days.Count - 1];
+            var gaps = new List<(long from, long to)>();
+            long prev = 0;
+            foreach (var d in days)
             {
-                if (!days.Contains(d)) missing.Add(d);
+                // day는 양수라 0 <= prev < d. 빼기로 비교해 long 최대값에서도 넘치지 않는다.
+                if (d - prev > 1) gaps.Add((prev + 1, d - 1));
+                prev = d;
             }
-            if (missing.Count > 0)
+            if (gaps.Count > 0)
             {
-                Add(issues, TableIssueKind.Check4, name, 0, "day", "1~" + last + "일 중 빠진 날: " + string.Join(", ", missing));
+                var shown = gaps.Take(MaxGapsShown).Select(g => g.from == g.to ? g.from.ToString() : g.from + "~" + g.to);
+                var more = gaps.Count > MaxGapsShown ? " 외 " + (gaps.Count - MaxGapsShown) + "구간" : "";
+                Add(issues, TableIssueKind.Check4, name, 0, "day", "1~" + last + "일 중 빠진 날: " + string.Join(", ", shown) + more);
             }
 
             var rules = set[Schemas.ResetRules].Rows;

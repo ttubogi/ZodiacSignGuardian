@@ -6,7 +6,9 @@ namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
     /// 표 한 행. 값은 열 종류에 따라 long(정수), string(나머지), string[](WeekdayList), 빈 칸은 null.
-    /// Line은 CSV 줄 번호. JSON에서 읽은 행은 행 순서(머리줄을 1로 치고 2부터)를 넣는다.
+    /// Line은 표의 출처(LoadedTable.Source)에 따라 뜻이 다르다.
+    /// CSV: 파일의 줄 번호(머리줄이 1줄, 빈 줄도 센다). JSON: rows 배열의 데이터 행 번호(첫 행이 1).
+    /// 화면·문구에 쓸 때는 TableIssue.At(source, line)을 쓴다.
     /// 값을 읽지 못한 칸(이미 문제로 남긴 칸)이 있어도 행은 남긴다. 그래야 다른 검사가
     /// "그 행이 없다"는 엉뚱한 연쇄 문제를 내지 않는다. 검사는 IsValid로 그 칸만 건너뛴다.
     /// </summary>

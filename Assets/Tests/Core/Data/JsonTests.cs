@@ -237,6 +237,29 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             Assert.That(issues.Single().Column, Is.EqualTo("min_minutes"));
         }
 
+        // ---- 읽지 못한 칸이 공통 검사까지 가도 예외 없이 실패 (Codex 재검토 2026-11-15) ----
+        // TableJson.Read만이 아니라 LoadJson 전체를 거쳐, 표 사이 검사가 그 칸을 건너뛰는지 본다.
+
+        [TestCase("daily_missions.json", "\"reset_rule\": \"daily\"", "\"reset_rule\": 5", "reset_rule")]
+        [TestCase("daily_missions.json", "\"reward_currency\": \"gold\"", "\"reward_currency\": [\"gold\"]", "reward_currency")]
+        [TestCase("attendance.json", "\"reward_kind\": \"star\"", "\"reward_kind\": {\"x\": 1}", "reward_kind")]
+        [TestCase("attendance.json", "\"day\": 2", "\"day\": \"2\"", "day")]
+        [TestCase("reset_rules.json", "\"period\": \"daily\"", "\"period\": 1", "period")]
+        [TestCase("reset_rules.json", "\"period\": \"cycle\"", "\"period\": true", "period")]
+        [TestCase("reset_rules.json", "\"reset_hour\": 5, \"weekday\": \"mon\"", "\"reset_hour\": \"5\", \"weekday\": \"mon\"", "reset_hour")]
+        [TestCase("boards.json", "\"slot_a\": 1", "\"slot_a\": null", "slot_a")]
+        [TestCase("stars.json", "\"element\": \"fire\"", "\"element\": 3", "element")]
+        public void 값_종류가_틀린_칸은_공통_검사까지_가도_형식_문제로만_실패한다(string file, string from, string to, string column)
+        {
+            List<TableIssue> issues = null;
+            Assert.DoesNotThrow(() => issues = LoadBroken(GoodJson(), file, from, to));
+            var table = file.Replace(".json", "");
+            Assert.That(issues.Any(i => i.Table == table && i.Column == column), Is.True, TestTables.Describe(issues));
+            Assert.That(issues.All(i => i.Source == TableSource.Json), Is.True);
+            // 연쇄 문제가 하나도 없는지는 여기서 보지 않는다. day·element·slot을 못 읽으면 검사 4·8·9가
+            // 그 값을 모른 채 셈해 문제를 하나 더 낸다(2026-11-15 확인, 고칠지는 사용자 결정 대기).
+        }
+
         // ---- 묶음 단위 ----
 
         [Test]

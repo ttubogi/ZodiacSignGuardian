@@ -104,6 +104,30 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         }
 
         [Test]
+        public void 검사4_이어진_빠진_날은_구간으로_보인다()
+        {
+            // 1, 3, 6일만 있음 → 빠진 날 2, 4~5
+            var issues = Run(Good()
+                .Replace("attendance", "2,currency,dust,1000\n3,star,wood_1,1\n", "3,star,wood_1,1\n6,currency,gold,1\n")
+                .Replace("reset_rules", "attendance_cycle,cycle,,,3,", "attendance_cycle,cycle,,,6,"));
+            AssertOnly(issues, TableIssueKind.Check4);
+            Assert.That(issues[0].Message, Does.EndWith("1~6일 중 빠진 날: 2, 4~5"));
+        }
+
+        [Test]
+        public void 검사4_빠진_구간이_많으면_앞의_10구간만_보인다()
+        {
+            // 1, 3, 5, …, 25일 → 빠진 날 2, 4, …, 24 (12구간)
+            var rows = string.Concat(Enumerable.Range(0, 13).Select(i => (1 + 2 * i) + ",currency,gold,1\n"));
+            var texts = Good();
+            texts["attendance.csv"] = "day,reward_kind,reward_id,amount\n" + rows;
+            var issues = Run(texts.Replace("reset_rules", "attendance_cycle,cycle,,,3,", "attendance_cycle,cycle,,,25,"));
+            AssertOnly(issues, TableIssueKind.Check4);
+            Assert.That(TableChecks.MaxGapsShown, Is.EqualTo(10));
+            Assert.That(issues[0].Message, Does.EndWith("1~25일 중 빠진 날: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20 외 2구간"));
+        }
+
+        [Test]
         public void 검사4_1일이_없으면_잡는다()
         {
             AssertOnly(Run(Good().Replace("attendance", "1,currency,gold,50\n", "")), TableIssueKind.Check4);
