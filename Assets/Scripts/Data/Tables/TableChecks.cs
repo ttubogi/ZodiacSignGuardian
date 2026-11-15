@@ -81,6 +81,13 @@ namespace ZodiacSignGuardian.Data.Tables
                     Add(issues, TableIssueKind.Check2, from.Schema.Name, row.Line, column, "'" + id + "'가 " + targetTable + "에 없음");
                     return;
                 }
+                // 일일 임무는 daily 규칙만 가리킨다 (C1 검토, 2026-11-15)
+                if (from.Schema == Schemas.DailyMissions && column == "reset_rule"
+                    && target.IsValid("period") && target.Str("period") != "daily")
+                {
+                    Add(issues, TableIssueKind.Check2, from.Schema.Name, row.Line, column,
+                        "일일 임무는 daily 규칙만 가리킬 수 있음: '" + id + "'는 period=" + target.Str("period"));
+                }
                 // build를 읽지 못한 쪽이 있으면 검사 7은 건너뛴다 (이미 형식 문제로 남음)
                 if (row.Build == Schemas.M1 && target.Build != null && target.Build != Schemas.M1)
                 {
@@ -105,6 +112,7 @@ namespace ZodiacSignGuardian.Data.Tables
         }
 
         // 4. 출석은 1일부터 마지막 날까지 빠짐없이 한 번씩 있다. (겹침은 검사 1)
+        //    마지막 날은 reset_rules의 cycle 규칙(출석 주기, 하나뿐)의 cycle_days와 같다. (C1 검토, 2026-11-15)
         static void Check4_Attendance(TableSet set, List<TableIssue> issues)
         {
             var t = set[Schemas.Attendance];
@@ -125,6 +133,20 @@ namespace ZodiacSignGuardian.Data.Tables
             if (missing.Count > 0)
             {
                 Add(issues, TableIssueKind.Check4, name, 0, "day", "1~" + last + "일 중 빠진 날: " + string.Join(", ", missing));
+            }
+
+            var rules = set[Schemas.ResetRules].Rows;
+            if (rules.Any(r => !r.IsValid("period"))) return; // period를 못 읽은 규칙이 있으면 개수를 알 수 없음 (이미 형식 문제)
+            var cycles = rules.Where(r => r.Str("period") == "cycle").ToList();
+            if (cycles.Count != 1)
+            {
+                Add(issues, TableIssueKind.Check4, name, 0, null,
+                    "출석 주기를 정하는 reset_rules의 cycle 규칙이 정확히 하나여야 함 (지금 " + cycles.Count + "개)");
+            }
+            else if (cycles[0].IsValid("cycle_days") && !cycles[0].IsBlank("cycle_days") && cycles[0].Long("cycle_days") != last)
+            {
+                Add(issues, TableIssueKind.Check4, name, 0, "day",
+                    "마지막 날 " + last + "일이 reset_rules '" + cycles[0].Str("rule_id") + "'(" + cycles[0].Line + "줄)의 cycle_days " + cycles[0].Long("cycle_days") + "와 다름");
             }
         }
 
@@ -152,6 +174,8 @@ namespace ZodiacSignGuardian.Data.Tables
             int? boundary = daily == null ? (int?)null : (int)daily.Long("reset_hour") * 60;
             if (boundary == null)
             {
+                // period·reset_hour를 못 읽은 규칙이 있으면 daily 규칙이 없다고 단정하지 않는다 (이미 형식 문제)
+                if (set[Schemas.ResetRules].Rows.Any(r => !r.AllValid("period", "reset_hour"))) return;
                 Add(issues, TableIssueKind.Check6, name, 0, null, "reset_rules에 daily 규칙이 없어 하루 경계를 알 수 없음");
             }
 

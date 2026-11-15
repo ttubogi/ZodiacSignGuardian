@@ -9,11 +9,11 @@ namespace ZodiacSignGuardian.Data.Tables
         Format = 0,
         /// <summary>1. id가 같은 표 안에서 겹치지 않는다.</summary>
         Check1 = 1,
-        /// <summary>2. 다른 표를 가리키는 값은 실제로 있다.</summary>
+        /// <summary>2. 다른 표를 가리키는 값은 실제로 있다. 일일 임무는 daily 규칙만 가리킨다.</summary>
         Check2 = 2,
         /// <summary>3. 수량·횟수·시간은 양의 정수다.</summary>
         Check3 = 3,
-        /// <summary>4. 출석은 1일부터 마지막 날까지 빠짐없이 한 번씩 있다.</summary>
+        /// <summary>4. 출석은 1일부터 마지막 날까지 빠짐없이 한 번씩 있고, 마지막 날은 cycle 규칙의 cycle_days와 같다.</summary>
         Check4 = 4,
         /// <summary>5. 요일 던전을 켤 때는 7요일이 모두 있다.</summary>
         Check5 = 5,

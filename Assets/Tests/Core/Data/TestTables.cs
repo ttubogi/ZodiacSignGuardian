@@ -149,7 +149,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         }
 
         internal static string CsvDir => Path.Combine(Root, "Tables", "csv");
-        internal static string JsonDir => Path.Combine(Root, "Tables", "json");
+        internal static string JsonDir => Path.Combine(Root, "Assets", "Resources", "Tables");
 
         internal static Dictionary<string, byte[]> CsvBytes()
         {

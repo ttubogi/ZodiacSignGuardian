@@ -45,6 +45,23 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             AssertOnly(Run(Good().Replace(table, from, to)), TableIssueKind.Check2);
         }
 
+        [TestCase("weekly")]
+        [TestCase("attendance_cycle")]
+        public void 검사2_일일_임무가_daily가_아닌_규칙을_가리키면_잡는다(string rule)
+        {
+            var issues = Run(Good().Replace("daily_missions", "kill_monsters,daily,", "kill_monsters," + rule + ","));
+            AssertOnly(issues, TableIssueKind.Check2);
+            Assert.That(issues.Single().Message, Does.Contain("daily 규칙만"));
+        }
+
+        [Test]
+        public void 규칙의_period를_못_읽으면_형식_문제만_나오고_연쇄_문제는_없다()
+        {
+            // daily 행의 period가 틀리면: 검사 2(daily 아님)·검사 4(cycle 개수)·검사 6(daily 없음)이 따라 나오면 안 된다
+            AssertOnly(Run(Good().Replace("reset_rules", "daily,daily,5,", "daily,dayly,5,")), TableIssueKind.Format);
+            AssertOnly(Run(Good().Replace("reset_rules", "attendance_cycle,cycle,", "attendance_cycle,cycel,")), TableIssueKind.Format);
+        }
+
         [Test]
         public void 검사2_출석은_reward_kind에_맞는_표를_본다()
         {
@@ -101,7 +118,30 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 검사4_1일_하나만_있어도_빠짐은_없다()
         {
-            AssertNone(Run(Good().Replace("attendance", "2,currency,dust,1000\n3,star,wood_1,1\n", "")));
+            AssertNone(Run(Good()
+                .Replace("attendance", "2,currency,dust,1000\n3,star,wood_1,1\n", "")
+                .Replace("reset_rules", "attendance_cycle,cycle,,,3,", "attendance_cycle,cycle,,,1,")));
+        }
+
+        [Test]
+        public void 검사4_마지막_날이_cycle_days와_다르면_잡는다()
+        {
+            var issues = Run(Good().Replace("reset_rules", "attendance_cycle,cycle,,,3,", "attendance_cycle,cycle,,,4,"));
+            AssertOnly(issues, TableIssueKind.Check4);
+            Assert.That(issues[0].Message, Does.Contain("마지막 날 3일").And.Contain("cycle_days 4"));
+        }
+
+        [Test]
+        public void 검사4_출석일을_늘리고_cycle_days를_안_고치면_잡는다()
+        {
+            AssertOnly(Run(Good().AppendRow("attendance", "4,currency,gold,10")), TableIssueKind.Check4);
+        }
+
+        [Test]
+        public void 검사4_cycle_규칙이_없거나_둘이면_잡는다()
+        {
+            AssertOnly(Run(Good().Replace("reset_rules", "attendance_cycle,cycle,,,3,540,5,10,5\n", "")), TableIssueKind.Check4);
+            AssertOnly(Run(Good().AppendRow("reset_rules", "event_cycle,cycle,,,3,540,5,10,5")), TableIssueKind.Check4);
         }
 
         [Test]
@@ -182,9 +222,13 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 검사6_daily_규칙이_없으면_경계를_알_수_없다고_알린다()
         {
+            // 일일 임무는 daily 규칙만 가리킬 수 있으므로 검사 2도 함께 걸린다
             var t = Good().Replace("reset_rules", "daily,daily,5,,,540,5,10,5\n", "")
                 .Replace("daily_missions", ",daily,", ",weekly,");
-            AssertOnly(Run(t), TableIssueKind.Check6);
+            var issues = Run(t);
+            AssertHas(issues, TableIssueKind.Check6);
+            AssertHas(issues, TableIssueKind.Check2);
+            Assert.That(issues.All(i => i.Kind == TableIssueKind.Check6 || i.Kind == TableIssueKind.Check2), Is.True, Describe(issues));
         }
 
         // ---- 7. m1 → v1 참조 ----

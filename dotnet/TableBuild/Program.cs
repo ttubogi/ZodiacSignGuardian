@@ -8,8 +8,9 @@ using ZodiacSignGuardian.Data.Tables;
 namespace ZodiacSignGuardian.TableBuild
 {
     /// <summary>
-    /// Tables/csv의 CSV 12개를 검사하고, 모두 통과하면 Tables/json에 JSON 12개를 쓴다.
+    /// Tables/csv의 CSV 12개를 검사하고, 모두 통과하면 Assets/Resources/Tables에 JSON 12개를 쓴다.
     /// 하나라도 걸리면 아무것도 쓰지 않고 1로 끝난다.
+    /// 출력 폴더가 Assets 안이면, 없는 .meta(폴더·JSON)만 새 GUID로 만든다. 있는 .meta는 건드리지 않는다.
     /// 인자: [check] [--csv 폴더] [--json 폴더]
     /// </summary>
     public static class Program
@@ -20,7 +21,7 @@ namespace ZodiacSignGuardian.TableBuild
             bool checkOnly = args.Contains("check");
             string root = FindRepoRoot();
             string csvDir = Arg(args, "--csv") ?? Path.Combine(root, "Tables", "csv");
-            string jsonDir = Arg(args, "--json") ?? Path.Combine(root, "Tables", "json");
+            string jsonDir = Arg(args, "--json") ?? Path.Combine(root, "Assets", "Resources", "Tables");
 
             if (!Directory.Exists(csvDir))
             {
@@ -66,6 +67,9 @@ namespace ZodiacSignGuardian.TableBuild
                 temps.Add((temp, target));
             }
             foreach (var (temp, target) in temps) File.Move(temp, target, overwrite: true);
+
+            var createdMetas = UnityMeta.EnsureMetas(root, jsonDir, result.Outputs.Keys.Select(k => Path.Combine(jsonDir, k)));
+            foreach (var meta in createdMetas) Console.WriteLine("새 .meta: " + Path.GetRelativePath(root, meta));
 
             Console.WriteLine($"검사 통과, JSON {result.Outputs.Count}개를 썼습니다: {jsonDir}");
             return 0;

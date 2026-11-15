@@ -5,7 +5,7 @@ using ZodiacSignGuardian.Data.Tables;
 
 namespace ZodiacSignGuardian.Core.Tests.Data
 {
-    /// <summary>저장소의 실제 Tables/csv·Tables/json. 값은 임시지만 검사는 실제로 통과해야 한다.</summary>
+    /// <summary>저장소의 실제 Tables/csv와 Assets/Resources/Tables(JSON). 값은 임시지만 검사는 실제로 통과해야 한다.</summary>
     [TestFixture]
     public class RepoTablesTests
     {
@@ -23,7 +23,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             // CSV만 고치고 변환을 잊으면 여기서 걸린다
             var built = TableBuilder.Build(RepoFiles.CsvBytes()).Outputs;
             var committed = RepoFiles.JsonTexts();
-            Assert.That(committed.Keys.OrderBy(k => k).ToArray(), Is.EqualTo(built.Keys.OrderBy(k => k).ToArray()), "Tables/json의 파일 목록");
+            Assert.That(committed.Keys.OrderBy(k => k).ToArray(), Is.EqualTo(built.Keys.OrderBy(k => k).ToArray()), "Assets/Resources/Tables의 JSON 파일 목록");
             foreach (var k in built.Keys)
             {
                 Assert.That(committed[k], Is.EqualTo(built[k]), k + "가 CSV와 다름 — dotnet run --project dotnet/TableBuild로 다시 만들 것");
