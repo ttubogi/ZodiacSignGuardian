@@ -1,0 +1,33 @@
+{
+  "table": "boards",
+  "columns": ["chapter", "constellation_id", "slot_a", "slot_b", "build"],
+  "rows": [
+    {"chapter": 1, "constellation_id": "cassiopeia", "slot_a": 1, "slot_b": 2, "build": "m1"},
+    {"chapter": 1, "constellation_id": "cassiopeia", "slot_a": 2, "slot_b": 3, "build": "m1"},
+    {"chapter": 1, "constellation_id": "cassiopeia", "slot_a": 3, "slot_b": 4, "build": "m1"},
+    {"chapter": 1, "constellation_id": "cassiopeia", "slot_a": 4, "slot_b": 5, "build": "m1"},
+    {"chapter": 2, "constellation_id": "sagitta", "slot_a": 1, "slot_b": 2, "build": "m1"},
+    {"chapter": 2, "constellation_id": "sagitta", "slot_a": 2, "slot_b": 3, "build": "m1"},
+    {"chapter": 2, "constellation_id": "sagitta", "slot_a": 3, "slot_b": 4, "build": "m1"},
+    {"chapter": 2, "constellation_id": "sagitta", "slot_a": 3, "slot_b": 5, "build": "m1"},
+    {"chapter": 3, "constellation_id": "cygnus", "slot_a": 1, "slot_b": 2, "build": "m1"},
+    {"chapter": 3, "constellation_id": "cygnus", "slot_a": 2, "slot_b": 3, "build": "m1"},
+    {"chapter": 3, "constellation_id": "cygnus", "slot_a": 2, "slot_b": 4, "build": "m1"},
+    {"chapter": 3, "constellation_id": "cygnus", "slot_a": 2, "slot_b": 5, "build": "m1"},
+    {"chapter": 4, "constellation_id": "lyra", "slot_a": 1, "slot_b": 2, "build": "v1"},
+    {"chapter": 4, "constellation_id": "lyra", "slot_a": 1, "slot_b": 3, "build": "v1"},
+    {"chapter": 4, "constellation_id": "lyra", "slot_a": 2, "slot_b": 3, "build": "v1"},
+    {"chapter": 4, "constellation_id": "lyra", "slot_a": 3, "slot_b": 4, "build": "v1"},
+    {"chapter": 4, "constellation_id": "lyra", "slot_a": 4, "slot_b": 5, "build": "v1"},
+    {"chapter": 5, "constellation_id": "delphinus", "slot_a": 1, "slot_b": 2, "build": "v1"},
+    {"chapter": 5, "constellation_id": "delphinus", "slot_a": 2, "slot_b": 3, "build": "v1"},
+    {"chapter": 5, "constellation_id": "delphinus", "slot_a": 3, "slot_b": 4, "build": "v1"},
+    {"chapter": 5, "constellation_id": "delphinus", "slot_a": 4, "slot_b": 1, "build": "v1"},
+    {"chapter": 5, "constellation_id": "delphinus", "slot_a": 4, "slot_b": 5, "build": "v1"},
+    {"chapter": 6, "constellation_id": "auriga", "slot_a": 1, "slot_b": 2, "build": "v1"},
+    {"chapter": 6, "constellation_id": "auriga", "slot_a": 2, "slot_b": 3, "build": "v1"},
+    {"chapter": 6, "constellation_id": "auriga", "slot_a": 3, "slot_b": 4, "build": "v1"},
+    {"chapter": 6, "constellation_id": "auriga", "slot_a": 4, "slot_b": 5, "build": "v1"},
+    {"chapter": 6, "constellation_id": "auriga", "slot_a": 5, "slot_b": 1, "build": "v1"}
+  ]
+}

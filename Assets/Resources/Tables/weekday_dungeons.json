@@ -1,0 +1,5 @@
+{
+  "table": "weekday_dungeons",
+  "columns": ["weekday", "dungeon_id", "reward_currency", "free_entries"],
+  "rows": []
+}

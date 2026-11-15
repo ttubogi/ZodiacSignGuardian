@@ -1,0 +1,5 @@
+{
+  "table": "weekly_challenge",
+  "columns": ["min_stage", "reward_currency", "reward_amount"],
+  "rows": []
+}

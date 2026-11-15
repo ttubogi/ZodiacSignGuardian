@@ -1,0 +1,9 @@
+{
+  "table": "reset_rules",
+  "columns": ["rule_id", "period", "reset_hour", "weekday", "cycle_days", "utc_offset_min", "sync_interval_min", "anchor_valid_min", "max_rtt_sec"],
+  "rows": [
+    {"rule_id": "daily", "period": "daily", "reset_hour": 5, "weekday": null, "cycle_days": null, "utc_offset_min": 540, "sync_interval_min": 5, "anchor_valid_min": 10, "max_rtt_sec": 5},
+    {"rule_id": "weekly", "period": "weekly", "reset_hour": 5, "weekday": "mon", "cycle_days": null, "utc_offset_min": 540, "sync_interval_min": 5, "anchor_valid_min": 10, "max_rtt_sec": 5},
+    {"rule_id": "attendance_cycle", "period": "cycle", "reset_hour": null, "weekday": null, "cycle_days": 28, "utc_offset_min": 540, "sync_interval_min": 5, "anchor_valid_min": 10, "max_rtt_sec": 5}
+  ]
+}

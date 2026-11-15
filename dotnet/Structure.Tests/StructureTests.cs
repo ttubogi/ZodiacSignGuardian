@@ -43,6 +43,65 @@ namespace ZodiacSignGuardian.Structure.Tests
             Assert.That(RuleFileRules.Check(claude, agents), Is.Empty);
         }
 
+        /// <summary>보이지 않는 문자(줄 구분자, BOM, 폭 없는 공백)가 코드 안에 들어가면 Unity·편집기마다 다르게 읽힌다.</summary>
+        internal static readonly char[] HiddenChars = { (char)0x2028, (char)0x2029, (char)0xFEFF, (char)0x200B, (char)0x200C, (char)0x200D, (char)0x00A0 };
+
+        internal static List<string> FindHiddenChars(string relativePath, string text)
+        {
+            var found = new List<string>();
+            var lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                foreach (var c in HiddenChars.Where(c => lines[i].IndexOf(c) >= 0))
+                {
+                    found.Add($"{relativePath}:{i + 1} U+{(int)c:X4}");
+                }
+            }
+            return found;
+        }
+
+        [Test]
+        public void 코드와_문서와_표에_보이지_않는_문자가_없다()
+        {
+            var found = new List<string>();
+            var sep = Path.DirectorySeparatorChar;
+            var files = Directory.GetFiles(RepoPaths.Root, "*.*", SearchOption.AllDirectories)
+                .Where(p => new[] { ".cs", ".md", ".csv", ".json", ".asmdef", ".csproj", ".props" }.Contains(Path.GetExtension(p)))
+                .Where(p => !p.Contains($"{sep}obj{sep}") && !p.Contains($"{sep}bin{sep}") && !p.Contains($"{sep}.git{sep}"));
+            foreach (var path in files)
+            {
+                {
+                    found.AddRange(FindHiddenChars(RepoPaths.Relative(path), File.ReadAllText(path)));
+                }
+            }
+            Assert.That(found, Is.Empty, "글자 대신 (char)0x2028처럼 숫자로 쓸 것");
+        }
+
+        [Test]
+        public void 표_변환_도구는_Data만_참조한다()
+        {
+            // 변환 도구가 판정(Core)을 쓰면 표 검사와 판정이 서로 기대게 된다
+            var tool = ProjectRules.CsprojInfo.LoadAll(RepoPaths.Root).Single(p => p.AssemblyName == "ZodiacSignGuardian.TableBuild");
+            Assert.That(tool.ProjectReferences, Is.EqualTo(new[] { "ZodiacSignGuardian.Data" }));
+        }
+
+        [Test]
+        public void Assets의_모든_파일과_폴더에_meta가_있고_GUID가_겹치지_않는다()
+        {
+            var entries = UnityProjectRules.AssetEntries(RepoPaths.Root);
+            Assert.That(UnityProjectRules.CheckMetaPairs(entries), Is.Empty);
+            var metas = entries.Where(e => e.EndsWith(".meta"))
+                .ToDictionary(e => e, e => File.ReadAllText(Path.Combine(RepoPaths.Root, "Assets", e)));
+            Assert.That(UnityProjectRules.CheckGuids(metas), Is.Empty);
+        }
+
+        [Test]
+        public void Unity_프로젝트는_6_3_LTS이고_테스트_패키지가_있다()
+        {
+            Assert.That(UnityProjectRules.CheckEditorVersion(File.ReadAllText(Path.Combine(RepoPaths.Root, "ProjectSettings", "ProjectVersion.txt"))), Is.Empty);
+            Assert.That(UnityProjectRules.CheckManifest(File.ReadAllText(Path.Combine(RepoPaths.Root, "Packages", "manifest.json"))), Is.Empty);
+        }
+
         [Test]
         public void 설계서_4절의_폴더가_모두_있다()
         {
@@ -222,6 +281,62 @@ namespace ZodiacSignGuardian.Structure.Tests
         {
             var agents = "# 제목\n## 진행 방식\n- 무엇\n## 최우선 원칙\n- 최신 지시가 이 파일보다 우선한다.\n- 사용자가 직접 고친 파일은 덮어쓰지 않는다.\n- 자동 검사 통과는 재미·미술 승인이 아니다.\n";
             AssertCaught(RuleFileRules.Check("@AGENTS.md", agents), "첫 절에");
+        }
+
+        [Test]
+        public void 보이지_않는_문자가_들어가면_줄_번호와_함께_잡는다()
+        {
+            var text = "a\nchar c = '" + (char)0x2028 + "';\nb " + (char)0xFEFF + "\n";
+            var found = StructureTests.FindHiddenChars("X.cs", text);
+            Assert.That(found, Is.EqualTo(new[] { "X.cs:2 U+2028", "X.cs:3 U+FEFF" }));
+        }
+
+        [Test]
+        public void meta가_빠지거나_짝이_없으면_잡는다()
+        {
+            var entries = UnityProjectRules.AssetEntries(RepoPaths.Root);
+            var noMeta = entries.Where(e => e != "Scripts/Core/AssemblyInfo.cs.meta").ToList();
+            AssertCaught(UnityProjectRules.CheckMetaPairs(noMeta), ".meta 없음: Assets/Scripts/Core/AssemblyInfo.cs");
+
+            var noFolderMeta = entries.Where(e => e != "Scripts/Data/Csv.meta").ToList();
+            AssertCaught(UnityProjectRules.CheckMetaPairs(noFolderMeta), ".meta 없음: Assets/Scripts/Data/Csv");
+
+            var orphan = entries.Append("Scripts/Core/Deleted.cs.meta").ToList();
+            AssertCaught(UnityProjectRules.CheckMetaPairs(orphan), "짝 없는 .meta: Assets/Scripts/Core/Deleted.cs.meta");
+        }
+
+        [Test]
+        public void GUID가_겹치거나_없으면_잡는다()
+        {
+            var metas = new Dictionary<string, string>
+            {
+                ["A.cs.meta"] = "fileFormatVersion: 2\nguid: 63800c05d1d652844afb6184ea481615",
+                ["B.cs.meta"] = "fileFormatVersion: 2\r\nguid: 63800c05d1d652844afb6184ea481615\r\n",
+                ["C.cs.meta"] = "fileFormatVersion: 2\n",
+            };
+            var v = UnityProjectRules.CheckGuids(metas);
+            AssertCaught(v, "GUID 겹침");
+            AssertCaught(v, "GUID를 읽을 수 없음: C.cs.meta");
+        }
+
+        [TestCase("m_EditorVersion: 6000.6.0f1\n", "6000.6.0f1")]
+        [TestCase("m_EditorVersion: 6000.30.1f1\n", "6000.30.1f1")]
+        [TestCase("m_EditorVersionWithRevision: 6000.3.28f1 (x)\n", "찾지 못함")]
+        public void 에디터_버전이_6_3_LTS가_아니면_잡는다(string text, string expected)
+        {
+            AssertCaught(UnityProjectRules.CheckEditorVersion(text), expected);
+        }
+
+        [Test]
+        public void 에디터_버전은_6_3의_다른_패치도_된다()
+        {
+            Assert.That(UnityProjectRules.CheckEditorVersion("m_EditorVersion: 6000.3.31f1\r\nm_EditorVersionWithRevision: 6000.3.31f1 (abc)\r\n"), Is.Empty);
+        }
+
+        [Test]
+        public void 테스트_패키지가_빠지면_잡는다()
+        {
+            AssertCaught(UnityProjectRules.CheckManifest("{\"dependencies\": {\"com.unity.ugui\": \"2.0.0\"}}"), "com.unity.test-framework");
         }
 
         [Test]

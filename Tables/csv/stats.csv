@@ -1,0 +1,5 @@
+stat_id,name_ko,max_level,build
+attack,공격력,0,m1
+max_hp,체력,0,m1
+crit_rate,치명타 확률,1000,m1
+crit_damage,치명타 피해,0,m1

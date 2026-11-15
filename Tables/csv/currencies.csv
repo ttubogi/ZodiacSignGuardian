@@ -1,0 +1,5 @@
+currency_id,name_ko,number_type,build
+stardust,별가루,game_number,m1
+galaxy_crystal,은하수정,integer,m1
+star_fragment,별조각,integer,m1
+enhance_stone,강화석,integer,m1
