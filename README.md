@@ -36,7 +36,8 @@ Core·Data는 `noEngineReferences: true`라 Unity API를 쓰면 컴파일되지 
 - CSV는 **UTF-8**만 받는다. Excel에서는 "CSV UTF-8(쉼표로 분리)"로 저장한다. (그냥 "CSV"는 CP949라 거절된다)
 - 고친 뒤 변환: `dotnet run --project dotnet/TableBuild` — 검사 10개를 모두 통과해야 JSON을 쓰고, 하나라도 걸리면 아무것도 쓰지 않는다. 새 JSON·폴더의 `.meta`는 없을 때만 만든다.
 - 확인만: `dotnet run --project dotnet/TableBuild -- check` — 저장소의 JSON이 CSV와 같은지 본다. (`dotnet test`에도 같은 검사가 있다)
-- 문제는 `[검사3] attendance.csv 15줄 amount: ...`처럼 종류·파일·줄·열과 함께 나온다. `형식`은 검사 10개 밖의 모양 문제(머리줄, 칸 수, 값 모양 등)다.
+- 문제는 `[검사3] attendance.csv 15줄 amount: ...`처럼 종류·파일·위치·열과 함께 나온다. JSON에서 난 문제는 `attendance.json 데이터 14행`처럼 데이터 행 번호로 나온다. `형식`은 검사 10개 밖의 모양 문제(머리줄, 칸 수, 값 모양, 행 수 등)다.
+- 게임에서 읽기(Services): `Schemas.All`의 표마다 `Resources.Load<TextAsset>("Tables/" + 표 이름)` → `파일 이름(schema.JsonFileName) → 글` 묶음을 `TableBuilder.LoadJson`에 넘긴다. CSV와 **같은 검사**(`TableValidation`)를 거치고, 문제가 하나라도 있으면 `Tables`가 null이다. 통과한 표 묶음만 Core에 넘긴다.
 - 정의 표의 값은 아직 임시다. 실제 숫자는 '밸런스 기초 문서'에서 정한다.
 
 ## Unity 밖 테스트

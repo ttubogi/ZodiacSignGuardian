@@ -40,7 +40,7 @@ namespace ZodiacSignGuardian.Data.Tables
                     var v = r[key];
                     if (seen.TryGetValue(v, out var firstLine))
                     {
-                        Add(issues, TableIssueKind.Check1, t.Schema.Name, r.Line, key, "'" + v + "'가 " + firstLine + "줄과 겹침");
+                        Add(issues, TableIssueKind.Check1, t.Schema.Name, r.Line, key, "'" + v + "'가 " + TableIssue.At(t.Source, firstLine) + "과 겹침");
                     }
                     else
                     {
@@ -146,7 +146,7 @@ namespace ZodiacSignGuardian.Data.Tables
             else if (cycles[0].IsValid("cycle_days") && !cycles[0].IsBlank("cycle_days") && cycles[0].Long("cycle_days") != last)
             {
                 Add(issues, TableIssueKind.Check4, name, 0, "day",
-                    "마지막 날 " + last + "일이 reset_rules '" + cycles[0].Str("rule_id") + "'(" + cycles[0].Line + "줄)의 cycle_days " + cycles[0].Long("cycle_days") + "와 다름");
+                    "마지막 날 " + last + "일이 reset_rules '" + cycles[0].Str("rule_id") + "'(" + TableIssue.At(set[Schemas.ResetRules].Source, cycles[0].Line) + ")의 cycle_days " + cycles[0].Long("cycle_days") + "와 다름");
             }
         }
 
@@ -208,7 +208,7 @@ namespace ZodiacSignGuardian.Data.Tables
                     if (cur.start < prev.end)
                     {
                         Add(issues, TableIssueKind.Check6, name, cur.row.Line, "start_time",
-                            day + "에 '" + cur.row.Str("event_id") + "'가 '" + prev.row.Str("event_id") + "'(" + prev.row.Line + "줄)와 겹침");
+                            day + "에 '" + cur.row.Str("event_id") + "'가 '" + prev.row.Str("event_id") + "'(" + TableIssue.At(t.Source, prev.row.Line) + ")와 겹침");
                     }
                 }
             }
@@ -251,7 +251,7 @@ namespace ZodiacSignGuardian.Data.Tables
                 foreach (var r in rows.Where(r => r.Str("constellation_id") != constellation))
                 {
                     Add(issues, TableIssueKind.Check9, name, r.Line, "constellation_id",
-                        chapter.Key + "장의 별자리가 '" + constellation + "'(" + first.Line + "줄)와 다름: '" + r.Str("constellation_id") + "'");
+                        chapter.Key + "장의 별자리가 '" + constellation + "'(" + TableIssue.At(t.Source, first.Line) + ")와 다름: '" + r.Str("constellation_id") + "'");
                 }
                 foreach (var r in rows.Where(r => r.Build != first.Build))
                 {
@@ -289,7 +289,7 @@ namespace ZodiacSignGuardian.Data.Tables
                     if (lines.TryGetValue(pair, out var firstLine))
                     {
                         Add(issues, TableIssueKind.Check9, name, r.Line, "slot_b",
-                            "같은 선 " + pair.Item1 + "-" + pair.Item2 + "이 " + firstLine + "줄에도 있음");
+                            "같은 선 " + pair.Item1 + "-" + pair.Item2 + "이 " + TableIssue.At(t.Source, firstLine) + "에도 있음");
                         continue;
                     }
                     lines[pair] = r.Line;
@@ -329,7 +329,7 @@ namespace ZodiacSignGuardian.Data.Tables
                 foreach (var r in valid.Skip(1).Where(r => r.Long(col) != first.Long(col)))
                 {
                     Add(issues, TableIssueKind.Check10, t.Schema.Name, r.Line, col,
-                        r.Long(col) + "이 첫 행(" + first.Line + "줄)의 " + first.Long(col) + "과 다름");
+                        r.Long(col) + "이 첫 행(" + TableIssue.At(t.Source, first.Line) + ")의 " + first.Long(col) + "과 다름");
                 }
             }
         }

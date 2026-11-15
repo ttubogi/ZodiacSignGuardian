@@ -66,11 +66,24 @@ namespace ZodiacSignGuardian.Data.Tables
     {
         public TableSchema Schema { get; }
         public IReadOnlyList<TableRow> Rows { get; }
+        public TableSource Source { get; }
+        /// <summary>
+        /// 표의 틀(파일·머리줄·JSON 바깥 모양)을 제대로 읽었는가. false면 행을 하나도 믿을 수 없어
+        /// 행 수 검사를 건너뛴다 (이미 형식 문제로 남아 있다).
+        /// </summary>
+        public bool Complete { get; }
 
-        public LoadedTable(TableSchema schema, IReadOnlyList<TableRow> rows)
+        public LoadedTable(TableSchema schema, IReadOnlyList<TableRow> rows, TableSource source = TableSource.Csv, bool complete = true)
         {
             Schema = schema;
             Rows = rows;
+            Source = source;
+            Complete = complete;
+        }
+
+        public static LoadedTable Broken(TableSchema schema, TableSource source)
+        {
+            return new LoadedTable(schema, new TableRow[0], source, complete: false);
         }
 
         public bool SameValues(LoadedTable other)

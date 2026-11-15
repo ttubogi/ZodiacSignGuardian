@@ -29,7 +29,19 @@ namespace ZodiacSignGuardian.Data.Tables
         Check10 = 10,
     }
 
-    /// <summary>검사에서 걸린 문제 하나. Line은 CSV의 줄 번호(1 = 머리줄), 0이면 표 전체에 대한 문제.</summary>
+    /// <summary>표를 어디서 읽었는가. 문제 위치를 표시할 때 쓴다.</summary>
+    public enum TableSource
+    {
+        /// <summary>Tables/csv의 CSV. 위치는 파일의 실제 줄 번호(1 = 머리줄).</summary>
+        Csv = 0,
+        /// <summary>Assets/Resources/Tables의 JSON. 위치는 rows 배열의 데이터 행 번호(1부터).</summary>
+        Json = 1,
+    }
+
+    /// <summary>
+    /// 검사에서 걸린 문제 하나.
+    /// Line: CSV면 파일의 줄 번호, JSON이면 데이터 행 번호(1부터). 0이면 표 전체에 대한 문제.
+    /// </summary>
     public sealed class TableIssue
     {
         public TableIssueKind Kind { get; }
@@ -37,14 +49,27 @@ namespace ZodiacSignGuardian.Data.Tables
         public int Line { get; }
         public string Column { get; }
         public string Message { get; }
+        public TableSource Source { get; }
 
-        public TableIssue(TableIssueKind kind, string table, int line, string column, string message)
+        public TableIssue(TableIssueKind kind, string table, int line, string column, string message, TableSource source = TableSource.Csv)
         {
             Kind = kind;
             Table = table;
             Line = line;
             Column = column;
             Message = message;
+            Source = source;
+        }
+
+        public TableIssue WithSource(TableSource source)
+        {
+            return source == Source ? this : new TableIssue(Kind, Table, Line, Column, Message, source);
+        }
+
+        /// <summary>메시지 안에서 다른 행을 가리킬 때 쓰는 위치 글. CSV는 "3줄", JSON은 "데이터 2행".</summary>
+        public static string At(TableSource source, int line)
+        {
+            return source == TableSource.Json ? "데이터 " + line + "행" : line + "줄";
         }
 
         public static string KindLabel(TableIssueKind kind)
@@ -54,8 +79,8 @@ namespace ZodiacSignGuardian.Data.Tables
 
         public override string ToString()
         {
-            var where = Table + ".csv";
-            if (Line > 0) where += " " + Line + "줄";
+            var where = Source == TableSource.Json ? Table + ".json" : Table + ".csv";
+            if (Line > 0) where += Source == TableSource.Json ? " 데이터 " + Line + "행" : " " + Line + "줄";
             if (!string.IsNullOrEmpty(Column)) where += " " + Column;
             return "[" + KindLabel(Kind) + "] " + where + ": " + Message;
         }

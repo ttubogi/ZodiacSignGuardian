@@ -6,8 +6,9 @@ using ZodiacSignGuardian.Data.Csv;
 namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
-    /// CSV 파일 12개를 읽어 TableSet으로 만든다. 형식 문제와 칸 단위 검사(3·8·9의 값 모양)는 여기서 걸린다.
-    /// 표 사이·행 사이 검사는 TableChecks가 한다.
+    /// CSV 파일 12개를 읽어 TableSet으로 만든다. 여기서는 읽기만 한다:
+    /// 파일·인코딩·CSV 문법·머리줄·칸 수·칸 값 모양(검사 3과 검사 8·9의 값 모양 포함).
+    /// 행 수·한 행 안의 규칙·표 사이 검사는 JSON과 같은 경로인 TableValidation이 한다.
     /// </summary>
     public static class TableLoader
     {
@@ -17,17 +18,23 @@ namespace ZodiacSignGuardian.Data.Tables
         public static TableSet LoadFiles(IReadOnlyDictionary<string, byte[]> files, List<TableIssue> issues)
         {
             var texts = new Dictionary<string, string>();
+            var undecodable = new HashSet<string>();
             foreach (var pair in files)
             {
                 var text = DecodeUtf8(pair.Value, TableName(pair.Key), issues);
                 if (text != null) texts[pair.Key] = text;
+                else undecodable.Add(pair.Key);
             }
-            // 해독에 실패한 파일은 '파일 없음'이 아니라 해독 오류 하나로만 남는다 (LoadTexts에서 거름)
-            return LoadTexts(texts, issues);
+            return LoadTexts(texts, issues, undecodable);
         }
 
         /// <summary>파일 이름 → 글. 테스트에서 글을 바로 넣을 때 쓴다.</summary>
         public static TableSet LoadTexts(IReadOnlyDictionary<string, string> texts, List<TableIssue> issues)
+        {
+            return LoadTexts(texts, issues, new HashSet<string>());
+        }
+
+        static TableSet LoadTexts(IReadOnlyDictionary<string, string> texts, List<TableIssue> issues, HashSet<string> undecodable)
         {
             var set = new TableSet();
             foreach (var name in texts.Keys.Where(k => Schemas.All.All(s => s.FileName != k)).OrderBy(k => k))
@@ -43,11 +50,12 @@ namespace ZodiacSignGuardian.Data.Tables
                 }
                 else
                 {
-                    if (!issues.Any(i => i.Table == schema.Name && i.Message.StartsWith("UTF-8")))
+                    // 해독에 실패한 파일은 '파일 없음'을 또 알리지 않는다
+                    if (!undecodable.Contains(schema.FileName))
                     {
                         issues.Add(new TableIssue(TableIssueKind.Format, schema.Name, 0, null, "파일이 없음"));
                     }
-                    set.Put(new LoadedTable(schema, new TableRow[0]));
+                    set.Put(LoadedTable.Broken(schema, TableSource.Csv));
                 }
             }
             return set;
@@ -70,21 +78,21 @@ namespace ZodiacSignGuardian.Data.Tables
             }
         }
 
+        /// <summary>CSV 글 하나를 표로 읽는다. 검사는 하지 않는다 (TableValidation).</summary>
         public static LoadedTable Parse(TableSchema schema, string text, List<TableIssue> issues)
         {
-            int issuesBefore = issues.Count;
             var rows = new List<TableRow>();
             var csv = CsvParser.Parse(text);
             if (csv.Error != null)
             {
                 issues.Add(new TableIssue(TableIssueKind.Format, schema.Name, csv.ErrorLine, null, csv.Error));
-                return new LoadedTable(schema, rows);
+                return LoadedTable.Broken(schema, TableSource.Csv);
             }
 
             if (csv.Records.Count == 0)
             {
                 issues.Add(new TableIssue(TableIssueKind.Format, schema.Name, 0, null, "머리줄이 없음 (빈 표도 머리줄은 있어야 함)"));
-                return new LoadedTable(schema, rows);
+                return LoadedTable.Broken(schema, TableSource.Csv);
             }
 
             var header = csv.Records[0];
@@ -93,7 +101,7 @@ namespace ZodiacSignGuardian.Data.Tables
             {
                 issues.Add(new TableIssue(TableIssueKind.Format, schema.Name, header.Line, null,
                     "머리줄이 다름. 기대: " + string.Join(",", expected) + " / 실제: " + string.Join(",", header.Fields)));
-                return new LoadedTable(schema, rows);
+                return LoadedTable.Broken(schema, TableSource.Csv);
             }
 
             foreach (var record in csv.Records.Skip(1))
@@ -104,66 +112,36 @@ namespace ZodiacSignGuardian.Data.Tables
                         "칸 수가 " + record.Fields.Count + "개 (머리줄은 " + expected.Length + "개)"));
                     continue;
                 }
-
-                var values = new object[expected.Length];
-                var invalid = new bool[expected.Length];
-                for (int i = 0; i < expected.Length; i++)
-                {
-                    var col = schema.Columns[i];
-                    if (!CellParser.TryParse(col, record.Fields[i], out var v, out var error))
-                    {
-                        issues.Add(new TableIssue(col.FormatIssueKind, schema.Name, record.Line, col.Name, error));
-                        invalid[i] = true;
-                    }
-                    values[i] = v;
-                }
-                rows.Add(new TableRow(schema, record.Line, values, invalid));
+                rows.Add(ParseRow(schema, record.Line, record.Fields, issues, TableSource.Csv));
             }
 
-            if (schema.SingleRow && rows.Count != 1 && issues.Count == issuesBefore)
-            {
-                issues.Add(new TableIssue(TableIssueKind.Format, schema.Name, 0, null, "설정 표는 행이 정확히 1개여야 함 (지금 " + rows.Count + "개)"));
-            }
-
-            var table = new LoadedTable(schema, rows);
-            RowRules(table, issues);
-            return table;
+            return new LoadedTable(schema, rows, TableSource.Csv);
         }
 
-        /// <summary>한 행 안에서만 정해지는 규칙.</summary>
-        static void RowRules(LoadedTable table, List<TableIssue> issues)
+        /// <summary>
+        /// 칸 글자들을 값으로 바꾼 행. 값을 읽지 못한 칸은 문제로 남기고 표시만 한다 (행은 남긴다).
+        /// rawCells의 null은 '이미 문제로 남긴 칸'(JSON에서 종류가 틀린 값)이다. CSV와 JSON이 같이 쓴다.
+        /// </summary>
+        internal static TableRow ParseRow(TableSchema schema, int line, IReadOnlyList<string> rawCells, List<TableIssue> issues, TableSource source)
         {
-            if (table.Schema == Schemas.ResetRules)
+            var values = new object[schema.Columns.Count];
+            var invalid = new bool[schema.Columns.Count];
+            for (int i = 0; i < schema.Columns.Count; i++)
             {
-                foreach (var r in table.Rows.Where(r => r.IsValid("period")))
+                var col = schema.Columns[i];
+                if (rawCells[i] == null)
                 {
-                    var period = r.Str("period");
-                    Need(r, "reset_hour", period == "daily" || period == "weekly", period, issues);
-                    Need(r, "weekday", period == "weekly", period, issues);
-                    Need(r, "cycle_days", period == "cycle", period, issues);
+                    invalid[i] = true;
+                    continue;
                 }
-            }
-            else if (table.Schema == Schemas.OfflineReward)
-            {
-                foreach (var r in table.Rows.Where(r => r.AllValid("min_minutes", "max_minutes") && r.Long("min_minutes") > r.Long("max_minutes")))
+                if (!CellParser.TryParse(col, rawCells[i], out var v, out var error))
                 {
-                    issues.Add(new TableIssue(TableIssueKind.Format, table.Schema.Name, r.Line, "min_minutes",
-                        "min_minutes(" + r.Long("min_minutes") + ")가 max_minutes(" + r.Long("max_minutes") + ")보다 큼"));
+                    issues.Add(new TableIssue(col.FormatIssueKind, schema.Name, line, col.Name, error, source));
+                    invalid[i] = true;
                 }
+                values[i] = v;
             }
-        }
-
-        static void Need(TableRow r, string column, bool required, string period, List<TableIssue> issues)
-        {
-            if (!r.IsValid(column)) return;
-            if (required && r.IsBlank(column))
-            {
-                issues.Add(new TableIssue(TableIssueKind.Format, "reset_rules", r.Line, column, "period=" + period + "이면 값이 필요함"));
-            }
-            else if (!required && !r.IsBlank(column))
-            {
-                issues.Add(new TableIssue(TableIssueKind.Format, "reset_rules", r.Line, column, "period=" + period + "이면 비워야 함"));
-            }
+            return new TableRow(schema, line, values, invalid);
         }
 
         static string TableName(string fileName)

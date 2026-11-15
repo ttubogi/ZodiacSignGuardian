@@ -33,9 +33,9 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 저장소의_JSON을_읽어도_검사를_통과한다()
         {
-            var issues = new List<TableIssue>();
-            TableBuilder.LoadJson(RepoFiles.JsonTexts(), issues);
-            TestTables.AssertNone(issues);
+            var r = TableBuilder.LoadJson(RepoFiles.JsonTexts());
+            TestTables.AssertNone(r.Issues.ToList());
+            Assert.That(r.Tables, Is.Not.Null);
         }
 
         [Test]
