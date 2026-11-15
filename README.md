@@ -19,6 +19,13 @@
 참조 방향은 asmdef로 막고, `dotnet/Structure.Tests`가 설계서 4절 표와 대조한다.
 Core·Data는 `noEngineReferences: true`라 Unity API를 쓰면 컴파일되지 않는다.
 
+## Unity
+
+- 에디터: **Unity 6.3 LTS** (`ProjectSettings/ProjectVersion.txt`, 지금 6000.3.28f1). 다른 버전으로 열면 구조 테스트가 실패한다.
+- 테스트: Window → General → Test Runner → EditMode → Run All. `com.unity.test-framework`(1.6.0, 에디터 내장)가 `Packages/manifest.json`에 있어야 한다.
+- `Assets` 아래 파일·폴더를 더하거나 지우면 `.meta`도 같이 커밋한다. 빠지면 구조 테스트가 실패한다.
+- Windows 11의 스마트 앱 컨트롤이 켜져 있으면 Unity 빌드 도구(Bee.DotNet.dll)가 막혀 컴파일이 안 된다(오류 0x800711C7).
+
 ## 표 (운영 숫자)
 
 | 폴더 | 내용 |

@@ -17,6 +17,9 @@ sysinfo.txt
 *.unitypackage
 crashlytics-build.properties
 
+# Claude 데스크톱 앱이 연결 폴더에 두는 결과물
+/Claude outputs/
+
 # Unity가 만드는 IDE 파일 (루트의 .csproj/.sln만, dotnet/ 아래는 저장소에 둔다)
 /*.csproj
 /*.sln
