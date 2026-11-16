@@ -249,15 +249,27 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [TestCase("reset_rules.json", "\"reset_hour\": 5, \"weekday\": \"mon\"", "\"reset_hour\": \"5\", \"weekday\": \"mon\"", "reset_hour")]
         [TestCase("boards.json", "\"slot_a\": 1", "\"slot_a\": null", "slot_a")]
         [TestCase("stars.json", "\"element\": \"fire\"", "\"element\": 3", "element")]
+        [TestCase("stars.json", "\"build\": \"m1\"}", "\"build\": 1}", "build")]
+        [TestCase("stars.json", "\"star_id\": \"wood_1\"", "\"star_id\": 1", "star_id")]
+        [TestCase("currencies.json", "\"currency_id\": \"gold\"", "\"currency_id\": [\"gold\"]", "currency_id")]
+        [TestCase("weekday_dungeons.json", "\"weekday\": \"sun\"", "\"weekday\": 7", "weekday")]
+        [TestCase("boards.json", "\"chapter\": 1", "\"chapter\": \"1\"", "chapter")]
+        [TestCase("boards.json", "\"constellation_id\": \"cassiopeia\"", "\"constellation_id\": 3", "constellation_id")]
         public void 값_종류가_틀린_칸은_공통_검사까지_가도_형식_문제로만_실패한다(string file, string from, string to, string column)
         {
+            var json = GoodJson();
             List<TableIssue> issues = null;
-            Assert.DoesNotThrow(() => issues = LoadBroken(GoodJson(), file, from, to));
+            Assert.DoesNotThrow(() => issues = LoadBroken(json, file, from, to));
             var table = file.Replace(".json", "");
             Assert.That(issues.Any(i => i.Table == table && i.Column == column), Is.True, TestTables.Describe(issues));
             Assert.That(issues.All(i => i.Source == TableSource.Json), Is.True);
-            // 연쇄 문제가 하나도 없는지는 여기서 보지 않는다. day·element·slot을 못 읽으면 검사 4·8·9가
-            // 그 값을 모른 채 셈해 문제를 하나 더 낸다(2026-11-15 확인, 고칠지는 사용자 결정 대기).
+
+            // 못 읽은 칸 때문에 생기는 연쇄 문제가 없다: 검사까지 돈 결과 = 그 파일을 읽을 때 난 문제뿐.
+            // 같은 열에 붙는 연쇄 문제(검사 5의 weekday, 검사 8의 element)도 잡히게 내용을 모두 비교한다.
+            // (2026-11-15: 전에는 day·element·slot 등을 못 읽으면 검사 2·4·5·8·9가 문제를 하나 더 냈음)
+            var readIssues = new List<TableIssue>();
+            TableJson.Read(Schemas.All.Single(s => s.JsonFileName == file), json[file], readIssues);
+            Assert.That(issues.Select(i => i.ToString()), Is.EquivalentTo(readIssues.Select(i => i.ToString())), TestTables.Describe(issues));
         }
 
         // ---- 묶음 단위 ----
