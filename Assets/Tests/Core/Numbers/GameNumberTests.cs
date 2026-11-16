@@ -309,11 +309,27 @@ namespace ZodiacSignGuardian.Core.Tests.Numbers
         [TestCase(0L, "0e0")]
         [TestCase(1500L, "1.5e3")]
         [TestCase(-25L, "-2.5e1")]
+        [TestCase(123456789012345L, "1.23456789012345e14")]
+        [TestCase(-999999999999999L, "-9.99999999999999e14")]
         public void 저장_문자열_모양(long value, string text)
         {
             Assert.That(GameNumber.From(value).ToSaveString(), Is.EqualTo(text));
             Assert.That(GameNumber.TryParseSave(text, out var back), Is.True);
             Assert.That(back, Is.EqualTo(GameNumber.From(value)));
+        }
+
+        [TestCase("-4.00469920365359e6762986232160741", -4.00469920365359, 6762986232160741L)]
+        [TestCase("9.99999999999999e9223372036854775807", 9.99999999999999, long.MaxValue)]
+        [TestCase("1e-9223372036854775808", 1.0, long.MinValue)]
+        [TestCase("3.33333333333333e-1", 3.33333333333333, -1L)]
+        public void 저장_문자열을_읽으면_같은_계산으로_만든_값과_비트까지_같다(string text, double mantissa, long exponent)
+        {
+            // Unity(Mono)에서 double 읽기가 한 비트 어긋났던 값 (2026-11-16)
+            Assert.That(GameNumber.TryParseSave(text, out var v), Is.True, text);
+            var made = GameNumber.From(mantissa, exponent);
+            Assert.That(BitConverter.DoubleToInt64Bits(v.Mantissa), Is.EqualTo(BitConverter.DoubleToInt64Bits(made.Mantissa)));
+            Assert.That(v.Exponent, Is.EqualTo(exponent));
+            Assert.That(v.ToSaveString(), Is.EqualTo(text));
         }
 
         [Test]
@@ -362,6 +378,18 @@ namespace ZodiacSignGuardian.Core.Tests.Numbers
         [TestCase("1.5e3.0")]
         [TestCase("1.0000000000000002e0")]
         [TestCase("9.999999999999998e0")]
+        [TestCase("1.000000000000001e0")]
+        [TestCase("+1.5e3")]
+        [TestCase("1.e3")]
+        [TestCase("01.5e3")]
+        [TestCase("0.0e0")]
+        [TestCase("-0e0")]
+        [TestCase("1.5e+3")]
+        [TestCase("1.5e-")]
+        [TestCase("1.5e9223372036854775808")]
+        [TestCase("1.5e-9223372036854775809")]
+        [TestCase("-")]
+        [TestCase("1.5ee3")]
         public void 틀린_저장_문자열은_읽지_않는다(string text)
         {
             Assert.That(GameNumber.TryParseSave(text, out var value), Is.False, text);

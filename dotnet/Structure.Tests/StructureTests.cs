@@ -60,6 +60,46 @@ namespace ZodiacSignGuardian.Structure.Tests
             return found;
         }
 
+        /// <summary>
+        /// 소수를 문자열에서 읽는 호출. Unity(Mono)의 double 읽기는 가장 가까운 값을 보장하지 않아 기기마다 값이 달라질 수 있다
+        /// (2026-11-16 GameNumber 저장 문자열에서 확인). 판정(Core)과 표(Data)에서는 정수로 읽고 나누어 만든다.
+        /// </summary>
+        internal static readonly string[] FloatTextReads =
+        {
+            "double.Parse", "double.TryParse", "Double.Parse", "Double.TryParse",
+            "float.Parse", "float.TryParse", "Single.Parse", "Single.TryParse",
+            "decimal.Parse", "decimal.TryParse", "Decimal.Parse", "Decimal.TryParse",
+            "Convert.ToDouble", "Convert.ToSingle", "Convert.ToDecimal",
+        };
+
+        internal static List<string> FindFloatTextReads(string relativePath, string text)
+        {
+            var found = new List<string>();
+            var lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                foreach (var call in FloatTextReads.Where(c => lines[i].Contains(c)))
+                {
+                    found.Add($"{relativePath}:{i + 1} {call}");
+                }
+            }
+            return found;
+        }
+
+        [Test]
+        public void 판정과_표_코드는_소수를_문자열에서_읽지_않는다()
+        {
+            var found = new List<string>();
+            foreach (var dir in new[] { "Assets/Scripts/Core", "Assets/Scripts/Data" })
+            {
+                foreach (var path in Directory.GetFiles(Path.Combine(RepoPaths.Root, dir), "*.cs", SearchOption.AllDirectories))
+                {
+                    found.AddRange(FindFloatTextReads(RepoPaths.Relative(path), File.ReadAllText(path)));
+                }
+            }
+            Assert.That(found, Is.Empty, "정수로 읽고 나누어 만들 것 (GameNumber.TryParseSave 참고)");
+        }
+
         [Test]
         public void 코드와_문서와_표에_보이지_않는_문자가_없다()
         {
@@ -281,6 +321,14 @@ namespace ZodiacSignGuardian.Structure.Tests
         {
             var agents = "# 제목\n## 진행 방식\n- 무엇\n## 최우선 원칙\n- 최신 지시가 이 파일보다 우선한다.\n- 사용자가 직접 고친 파일은 덮어쓰지 않는다.\n- 자동 검사 통과는 재미·미술 승인이 아니다.\n";
             AssertCaught(RuleFileRules.Check("@AGENTS.md", agents), "첫 절에");
+        }
+
+        [Test]
+        public void 소수를_문자열에서_읽으면_줄_번호와_함께_잡는다()
+        {
+            var text = "var a = 1;\nif (double.TryParse(s, out var d)) {}\nvar f = Convert.ToDouble(x);\n";
+            var found = StructureTests.FindFloatTextReads("X.cs", text);
+            Assert.That(found, Is.EqualTo(new[] { "X.cs:2 double.TryParse", "X.cs:3 Convert.ToDouble" }));
         }
 
         [Test]

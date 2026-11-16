@@ -232,40 +232,84 @@ namespace ZodiacSignGuardian.Core.Numbers
         }
 
         /// <summary>
-        /// 저장용 문자열 "가수e지수" (예: "1.5e3", "-2.25e-7", "0e0"). 가수는 언제나 15자리 십진수에 가장 가까운
-        /// double이라, 15자리(G15)로 쓰고 읽으면 비트까지 정확히 되돌아온다.
+        /// 저장용 문자열 "가수e지수" (예: "1.5e3", "-2.25e-7", "0e0").
+        /// 가수는 언제나 (15자리 정수 N) / 10^14에 가장 가까운 double이므로, N을 정수로 바꿔 쓰고 읽는다.
+        /// double을 십진 문자열로 쓰고 읽지 않는 이유: Unity(Mono)의 double 읽기는 가장 가까운 값을 보장하지 않아
+        /// "-4.00469920365359"가 한 비트 다른 값으로 읽혔다 (2026-11-16 Unity Test Runner에서 확인). 정수 읽기와
+        /// 나누기 한 번은 어느 기기에서도 같다.
         /// </summary>
         public string ToSaveString()
         {
-            return Mantissa.ToString("G15", CultureInfo.InvariantCulture) + "e" + Exponent.ToString(CultureInfo.InvariantCulture);
+            if (IsZero) return "0e0";
+            var n = (long)Math.Round(Math.Abs(Mantissa) * RoundScale); // 1e14 이상 1e15 미만의 정수
+            var digits = n.ToString(CultureInfo.InvariantCulture);
+            var frac = digits.Substring(1).TrimEnd('0');
+            return (Mantissa < 0 ? "-" : "") + digits[0] + (frac.Length > 0 ? "." + frac : "") + "e" + Exponent.ToString(CultureInfo.InvariantCulture);
         }
 
-        /// <summary>ToSaveString의 반대. 형식이 틀리거나, 가수가 맞춘 범위(0 또는 1 이상 10 미만)가 아니면 false.</summary>
+        /// <summary>
+        /// ToSaveString의 반대. 형식: [-]숫자[.숫자 1~14개]e[-]정수. 첫 숫자는 1~9 (0은 "0e0"만).
+        /// 공백·'+'·지수 표기 가수·15자리를 넘는 가수는 받지 않는다.
+        /// </summary>
         public static bool TryParseSave(string text, out GameNumber value)
         {
             value = Zero;
             if (string.IsNullOrEmpty(text)) return false;
-            var at = text.LastIndexOf('e');
+            if (text == "0e0") return true;
+            var at = text.IndexOf('e');
             if (at <= 0 || at == text.Length - 1) return false;
-            var mText = text.Substring(0, at);
-            var eText = text.Substring(at + 1);
-            // 가수에 지수 표기(E)가 끼면 거부: 저장 문자열은 1~10 범위라 필요 없다
-            if (mText.IndexOf('E') >= 0 || mText.IndexOf('e') >= 0) return false;
-            if (!double.TryParse(mText, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var m)) return false;
-            if (!long.TryParse(eText, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var e)) return false;
-            // "NaN"·"Infinity" 글자는 NumberStyles와 상관없이 읽힐 수 있어 따로 막는다
-            if (double.IsNaN(m) || double.IsInfinity(m)) return false;
-            var a = Math.Abs(m);
-            if (m == 0.0)
+            if (!TryParseExponent(text.Substring(at + 1), out var e)) return false;
+
+            var i = 0;
+            var negative = text[0] == '-';
+            if (negative) i = 1;
+            // 첫 숫자 1~9
+            if (i >= at || text[i] < '1' || text[i] > '9') return false;
+            long n = text[i] - '0';
+            i++;
+            var fracDigits = 0;
+            if (i < at)
             {
-                if (e != 0) return false;
-                value = Zero;
-                return true;
+                if (text[i] != '.') return false;
+                i++;
+                if (i >= at) return false; // "1.e3"
+                for (; i < at; i++)
+                {
+                    var c = text[i];
+                    if (c < '0' || c > '9') return false;
+                    if (++fracDigits > SignificantDigits - 1) return false;
+                    n = n * 10 + (c - '0');
+                }
             }
-            if (a < 1.0 || a >= 10.0) return false;
-            // 15자리로 반올림된 가수만 받는다 (계산으로는 나올 수 없는 값이 저장에 들어가지 않게)
-            if (Math.Round(m * RoundScale) / RoundScale != m) return false;
-            value = new GameNumber(m, e);
+            for (var k = fracDigits; k < SignificantDigits - 1; k++) n *= 10; // 15자리 정수로
+            var m = n / RoundScale; // 정수(2^53 미만) / 1e14: 어느 기기에서도 같은 가장 가까운 double
+            value = new GameNumber(negative ? -m : m, e);
+            return true;
+        }
+
+        static bool TryParseExponent(string s, out long e)
+        {
+            e = 0;
+            var i = 0;
+            var negative = false;
+            if (s.Length > 0 && s[0] == '-') { negative = true; i = 1; }
+            if (i >= s.Length) return false;
+            // long.MinValue까지 받으려고 음수 쪽으로 쌓는다
+            long acc = 0;
+            for (; i < s.Length; i++)
+            {
+                var c = s[i];
+                if (c < '0' || c > '9') return false;
+                var d = c - '0';
+                if (acc < (long.MinValue + d) / 10) return false; // 넘침
+                acc = acc * 10 - d;
+            }
+            if (!negative)
+            {
+                if (acc == long.MinValue) return false;
+                acc = -acc;
+            }
+            e = acc;
             return true;
         }
 
