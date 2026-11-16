@@ -248,8 +248,9 @@ namespace ZodiacSignGuardian.Data.Tables
         static void Check8_Stars(TableSet set, List<TableIssue> issues)
         {
             var t = set[Schemas.Stars];
-            // build나 element를 못 읽은 별이 있으면 속성별 개수를 셀 수 없다 (이미 형식 문제로 남음)
-            if (HasUnreadable(t, "build", "element")) return;
+            // m1일 수 있는 별(build를 못 읽었거나 m1인 별)의 element를 못 읽었으면 속성별 개수를 셀 수 없다 (이미 형식 문제로 남음).
+            // build가 m1이 아닌 것이 확실한 별의 칸은 m1 개수와 상관없으므로 건너뛰지 않는다 (Codex 검토 2026-11-16).
+            if (t.Rows.Any(r => r.Build == null || (r.Build == Schemas.M1 && !r.IsValid("element")))) return;
             var m1 = t.Rows.Where(r => r.Build == Schemas.M1).ToList();
             var wrong = Schemas.Elements
                 .Select(e => (element: e, count: m1.Count(r => r.Str("element") == e)))
@@ -279,8 +280,14 @@ namespace ZodiacSignGuardian.Data.Tables
                 var rows = chapter.ToList();
                 var first = rows[0];
 
-                // 별자리·build 비교는 둘 다 읽은 행끼리만
-                var named = rows.Where(r => r.AllValid("constellation_id", "build")).ToList();
+                // 별자리 비교는 별자리를 읽은 행끼리, build 비교는 build를 읽은 행끼리 따로 한다
+                // (한쪽 칸을 못 읽어도 다른 쪽 비교는 계속, Codex 검토 2026-11-16)
+                var builds = rows.Where(r => r.Build != null).ToList();
+                foreach (var r in builds.Where(r => r.Build != builds[0].Build))
+                {
+                    Add(issues, TableIssueKind.Check9, name, r.Line, "build", chapter.Key + "장 안에서 build가 다름");
+                }
+                var named = rows.Where(r => r.IsValid("constellation_id")).ToList();
                 if (named.Count > 0)
                 {
                     var head = named[0];
@@ -289,10 +296,6 @@ namespace ZodiacSignGuardian.Data.Tables
                     {
                         Add(issues, TableIssueKind.Check9, name, r.Line, "constellation_id",
                             chapter.Key + "장의 별자리가 '" + constellation + "'(" + TableIssue.At(t.Source, head.Line) + ")와 다름: '" + r.Str("constellation_id") + "'");
-                    }
-                    foreach (var r in named.Where(r => r.Build != head.Build))
-                    {
-                        Add(issues, TableIssueKind.Check9, name, r.Line, "build", chapter.Key + "장 안에서 build가 다름");
                     }
                     if (chapterOfConstellation.TryGetValue(constellation, out var other))
                     {

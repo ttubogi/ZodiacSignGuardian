@@ -149,6 +149,57 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             Assert.That(issues.Select(i => i.ToString()), Is.EquivalentTo(readIssues.Select(i => i.ToString())), Describe(issues));
         }
 
+        // ---- 건너뛰는 범위는 좁게 (Codex 검토 2026-11-16) ----
+
+        [Test]
+        public void 대상_표의_키_하나가_깨져도_찾은_다른_참조의_build_위반은_잡는다()
+        {
+            var issues = Run(Good()
+                .Replace("currencies", "dust,\"별가루, 반짝\",game_number,m1", ",\"별가루, 반짝\",game_number,m1")   // dust의 키를 못 읽음
+                .Replace("daily_missions", "kill_monsters,daily,kill_monster,100,gold,20,m1", "kill_monsters,daily,kill_monster,100,dungeon_key,20,m1")); // m1 → v1 재화
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check7 && i.Table == "daily_missions" && i.Column == "reward_currency"), Is.True, Describe(issues));
+            // dust를 가리키던 출석은 "없음"으로 단정하지 않는다
+            Assert.That(issues.Any(i => i.Table == "attendance"), Is.False, Describe(issues));
+        }
+
+        [Test]
+        public void 한_판의_칸_번호가_깨져도_읽은_선의_중복과_자기_연결은_잡는다()
+        {
+            var issues = Run(Good().Replace("boards",
+                "1,cassiopeia,1,2,m1\n1,cassiopeia,2,3,m1\n1,cassiopeia,3,4,m1\n1,cassiopeia,4,5,m1\n",
+                "1,cassiopeia,1,2,m1\n1,cassiopeia,2,1,m1\n1,cassiopeia,3,3,m1\n1,cassiopeia,4,x,m1\n"));
+            // 칸 번호 'x'를 못 읽은 문제(boards의 칸 형식 문제는 검사 9로 표시) + 겹친 선 + 자기 연결
+            Assert.That(issues.Count(i => i.Kind == TableIssueKind.Check9 && i.Table == "boards"), Is.EqualTo(3), Describe(issues));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check9 && i.Message.Contains("'x'")), Is.True, Describe(issues));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check9 && i.Message.Contains("같은 선 1-2")), Is.True, Describe(issues));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check9 && i.Message.Contains("자기")), Is.True, Describe(issues));
+            Assert.That(issues.Any(i => i.Message.StartsWith("1장 판")), Is.False, "칸 번호를 못 읽은 판의 이어짐은 보지 않음: " + Describe(issues));
+        }
+
+        [Test]
+        public void v1_별의_속성을_못_읽어도_m1_개수는_센다()
+        {
+            var issues = Run(Good()
+                .Replace("stars", "wood_4,wood,wood 4,v1", "wood_4,,wood 4,v1")
+                .Replace("stars", "fire_3,fire,fire 3,m1\n", ""));
+            // element 칸의 형식 문제도 검사 8로 표시되므로, 개수 문구로 구분한다
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check8 && i.Message.StartsWith("m1 별은 속성마다") && i.Message.Contains("fire 2")), Is.True, Describe(issues));
+        }
+
+        [Test]
+        public void build를_못_읽은_행이_있어도_별자리_비교는_한다()
+        {
+            var issues = Run(Good().Replace("boards", "1,cassiopeia,4,5,m1", "1,lyra,4,5,x"));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check9 && i.Column == "constellation_id" && i.Message.Contains("lyra")), Is.True, Describe(issues));
+        }
+
+        [Test]
+        public void 별자리를_못_읽은_행이_있어도_build_비교는_한다()
+        {
+            var issues = Run(Good().Replace("boards", "1,cassiopeia,4,5,m1", "1,,4,5,v1"));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check9 && i.Column == "build"), Is.True, Describe(issues));
+        }
+
         [Test]
         public void 못_읽은_칸이_있어도_그_칸과_상관없는_검사는_계속한다()
         {
