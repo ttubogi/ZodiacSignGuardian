@@ -46,6 +46,8 @@ namespace ZodiacSignGuardian.Core.Timing
         Accepted = 0,
         /// <summary>최소 허용 번호보다 작거나 이미 처리한 번호 이하라 버림 (실패가 아니다)</summary>
         IgnoredStale = 1,
+        /// <summary>일시정지 중에 와서 버림. 복귀 뒤 요청으로만 받아들인다(V2).</summary>
+        IgnoredPaused = 2,
     }
 
     /// <summary>

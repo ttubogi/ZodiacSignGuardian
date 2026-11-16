@@ -198,6 +198,11 @@ namespace ZodiacSignGuardian.Core.Economy
             return true;
         }
 
+        /// <summary>
+        /// 위반 주입 테스트에서 망가뜨린 상태(음수 잔액 등)를 만들 때만 쓴다. 검사 없이 잔액을 바꾼다. (설계서 5절 "위반 주입")
+        /// </summary>
+        internal void CorruptBalanceForTest(string currencyId, CurrencyAmount amount) => _balances[Known(currencyId)] = amount;
+
         public Wallet Clone()
         {
             var list = new List<KeyValuePair<string, CurrencyKind>>();
