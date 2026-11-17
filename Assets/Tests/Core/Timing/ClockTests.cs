@@ -428,7 +428,10 @@ namespace ZodiacSignGuardian.Core.Tests.Timing
             var c = new Clock(Config());
             Sync(c, ms, 1);
             Assert.That(c.EstimatedUtcUs, Is.EqualTo(ms * 1000L));
-            Assert.That(c.CanAdvance((long)(ElapsedConverter.MaxElapsedSec * 1e6)), Is.True);
+            // 추정 시각은 MaxEstimatedUtcUs(9999-12-31 23:59:59.999999)까지
+            var room = Clock.MaxEstimatedUtcUs - ms * 1000L;
+            Assert.That(c.CanAdvance(room), Is.True);
+            Assert.That(c.CanAdvance(room + 1), Is.False);
         }
 
         [Test]

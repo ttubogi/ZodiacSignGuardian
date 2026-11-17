@@ -85,6 +85,36 @@ namespace ZodiacSignGuardian.Core.Tests.Economy
         }
 
         [Test]
+        public void 큰_수_재화가_1_모자라면_NotEnoughCurrency()
+        {
+            // Codex 검토 2026-11-16: 잔액 999999999999999로 1000000000000000을 쓸 수 있었음
+            var w = New();
+            Give(w, CurrencyChange.Of(Dust, GameNumber.From(999_999_999_999_999L)));
+            AssertFails(w, ErrorCode.NotEnoughCurrency, CurrencyChange.Of(Dust, -GameNumber.From(1_000_000_000_000_000L)));
+            Give(w, CurrencyChange.Of(Dust, -GameNumber.From(999_999_999_999_999L)));
+            Assert.That(w.Balance(Dust).Number, Is.EqualTo(GameNumber.Zero));
+        }
+
+        [TestCase(9.99999999999999, 20L, 1.0, 21L)]
+        [TestCase(9.99999999999999, -3L, 1.0, -2L)]
+        [TestCase(1.0, 0L, 1.00000000000001, 0L)]
+        public void 십의_거듭제곱을_사이에_둔_잔액과_비용(double balM, long balE, double costM, long costE)
+        {
+            var w = New();
+            Give(w, CurrencyChange.Of(Dust, GameNumber.From(balM, balE)));
+            AssertFails(w, ErrorCode.NotEnoughCurrency, CurrencyChange.Of(Dust, -GameNumber.From(costM, costE)));
+        }
+
+        [Test]
+        public void 열다섯_자리를_넘는_차이는_같은_값으로_본다()
+        {
+            // 설계상 성질: 1000000000000001은 1000000000000000과 같은 값이라 잔액 1000000000000000으로 낼 수 있다
+            var w = New();
+            Give(w, CurrencyChange.Of(Dust, GameNumber.From(1_000_000_000_000_000L)));
+            Assert.That(w.Check(CurrencyChange.Of(Dust, -GameNumber.From(1_000_000_000_000_001L))), Is.Null);
+        }
+
+        [Test]
         public void 여러_재화는_모두_바뀌거나_하나도_안_바뀐다()
         {
             var w = New();

@@ -67,6 +67,12 @@ namespace ZodiacSignGuardian.Core.Timing
         /// <summary>serverUtcMs의 상한: 9999-12-31T23:59:59.999Z.</summary>
         public const long MaxServerUtcMs = 253402300799999L;
 
+        /// <summary>
+        /// 추정 시각(µs)의 상한: 9999-12-31T23:59:59.999999Z. 받는 서버 시각, 추정 시각, 저장의 lastSavedUtcMs, 불러올 때의 값이
+        /// 모두 이 안에 있으므로, 허용한 입력으로 만든 상태는 언제나 다시 저장하고 불러올 수 있다 (Codex 검토 2026-11-16).
+        /// </summary>
+        public const long MaxEstimatedUtcUs = MaxServerUtcMs * 1000L + 999L;
+
         public ClockConfig Config { get; }
 
         // ---- 저장하는 값 ----
@@ -93,14 +99,20 @@ namespace ZodiacSignGuardian.Core.Timing
 
         public static bool IsValidServerUtcMs(long serverUtcMs) => serverUtcMs >= 0 && serverUtcMs <= MaxServerUtcMs;
 
-        /// <summary>elapsed µs를 더해도 넘치지 않는지. (상한이 있어 실제로는 넘치지 않지만, 저장 값이 비정상일 때를 막는다)</summary>
+        /// <summary>
+        /// elapsed µs를 더해도 추정 시각이 MaxEstimatedUtcUs를 넘지 않는지. 기준 시각이 없으면 쌓지 않으므로 늘 된다(음수만 안 됨).
+        /// </summary>
         public bool CanAdvance(long elapsedUs)
         {
             if (elapsedUs < 0) return false;
-            if (SyncElapsedUs > long.MaxValue - elapsedUs) return false;
-            if (AnchorUtcMs != null && AnchorUtcMs.Value * 1000L > long.MaxValue - (SyncElapsedUs + elapsedUs)) return false;
-            return true;
+            if (AnchorUtcMs == null) return true;
+            // 기준 시각 × 1000 + 누적 <= MaxEstimatedUtcUs가 늘 지켜지므로 남은 여유와 비교하면 넘치지 않는다
+            return elapsedUs <= MaxEstimatedUtcUs - (AnchorUtcMs.Value * 1000L + SyncElapsedUs);
         }
+
+        /// <summary>처리한 일일·주간 구간 id가 가질 수 있는 범위 (1970-01-01T00:00Z ~ MaxEstimatedUtcUs의 구간).</summary>
+        public bool IsPossibleDay(long day) => day >= DayIdAt(0) && day <= DayIdAt(MaxEstimatedUtcUs);
+        public bool IsPossibleWeek(long week) => week >= WeekIdAt(0) && week <= WeekIdAt(MaxEstimatedUtcUs);
 
         // ---- 추정 시각과 구간 ----
 
@@ -179,11 +191,16 @@ namespace ZodiacSignGuardian.Core.Timing
             return SyncOutcome.Accepted;
         }
 
-        /// <summary>경과 시간(µs, 자르기 전)을 더한다. CanAdvance를 통과해야 한다(아니면 예외).</summary>
+        /// <summary>
+        /// 경과 시간(µs, 자르기 전)을 더한다. CanAdvance를 통과해야 한다(아니면 예외).
+        /// 서버 시각을 한 번도 받지 않았으면(기준 시각 없음) 쌓지 않는다: 기준이 없는 시간은 쓸 데가 없고 첫 동기화 때 어차피 0이 된다.
+        /// 그래서 "기준 시각이 없으면 동기화 누적은 0"이 늘 지켜지고, 저장 검사도 이 조건으로 엄격하게 둔다. (2026-11-17 결정 ①, Codex 검토)
+        /// </summary>
         public void Advance(long elapsedUs, List<GameEvent> events)
         {
             if (!CanAdvance(elapsedUs)) throw new ArgumentOutOfRangeException(nameof(elapsedUs), elapsedUs, "CanAdvance를 먼저 확인해야 함");
             if (events == null) throw new ArgumentNullException(nameof(events));
+            if (AnchorUtcMs == null) return;
             SyncElapsedUs += elapsedUs;
             if (Status == TimeStatus.Valid && SyncElapsedUs > Config.AnchorValidUs) SetStatus(TimeStatus.NeedsResync, events);
             RollPeriods(events);
@@ -234,7 +251,11 @@ namespace ZodiacSignGuardian.Core.Timing
             if (anchorUtcMs != null && !IsValidServerUtcMs(anchorUtcMs.Value)) return false;
             if (syncElapsedUs < 0) return false;
             if (anchorUtcMs == null && (syncElapsedUs != 0 || processedDay != null || processedWeek != null)) return false;
-            if (anchorUtcMs != null && anchorUtcMs.Value * 1000L > long.MaxValue - syncElapsedUs) return false;
+            if (anchorUtcMs != null && syncElapsedUs > MaxEstimatedUtcUs - anchorUtcMs.Value * 1000L) return false;
+            // 처리한 구간은 가능한 범위 안이어야 한다. 서버 시각이 뒤로 보정되는 것은 허용하므로(V3)
+            // "처리한 구간 <= 지금 추정 구간"은 강제하지 않는다 (Codex 검토 2026-11-16).
+            if (processedDay != null && !IsPossibleDay(processedDay.Value)) return false;
+            if (processedWeek != null && !IsPossibleWeek(processedWeek.Value)) return false;
             AnchorUtcMs = anchorUtcMs;
             SyncElapsedUs = syncElapsedUs;
             ProcessedDay = processedDay;

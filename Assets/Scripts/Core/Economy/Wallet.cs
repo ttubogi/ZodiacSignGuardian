@@ -127,6 +127,9 @@ namespace ZodiacSignGuardian.Core.Economy
             }
             else
             {
+                // 쓰는 경우는 잔액과 쓸 양을 먼저 비교한다. 결과의 부호만 보면 계산 반올림이 부족을 가릴 수 있다 (Codex 검토 2026-11-16:
+                // 잔액 999999999999999로 1000000000000000을 쓸 수 있었음). 비교는 맞춘 표현끼리라 정확하다.
+                if (c.Delta.Number.IsNegative && current.Number < -c.Delta.Number) { error = ErrorCode.NotEnoughCurrency; return false; }
                 GameNumber next;
                 try
                 {

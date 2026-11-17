@@ -223,6 +223,144 @@ namespace ZodiacSignGuardian.Core.Tests.Numbers
             Assert.That(d.IsNegative, Is.True);
         }
 
+        // ---- 정확한 더하기 (Codex 검토 2026-11-16) ----
+
+        [Test]
+        public void 자릿수가_하나_차이_나는_가까운_두_수의_뺄셈()
+        {
+            var big = GameNumber.From(1_000_000_000_000_000L);   // 1e15
+            var near = GameNumber.From(999_999_999_999_999L);    // 9.99999999999999e14
+            Assert.That(big - near, Is.EqualTo(GameNumber.One), "예전에는 0");
+            Assert.That(near - big, Is.EqualTo(-GameNumber.One));
+            Assert.That(-near + big, Is.EqualTo(GameNumber.One));
+        }
+
+        [TestCase(100L, "99.9999999999999", "1e-13")]
+        [TestCase(1000L, "999.999999999999", "1e-12")]
+        [TestCase(10L, "9.99999999999999", "1e-14")]
+        [TestCase(1L, "0.999999999999999", "1e-15")]
+        public void 십의_거듭제곱을_사이에_둔_가까운_두_수(long power, string justBelow, string expected)
+        {
+            var below = GameNumber.From(double.Parse(justBelow, System.Globalization.CultureInfo.InvariantCulture));
+            Assert.That(GameNumber.TryParseSave(expected, out var diff), Is.True);
+            Assert.That(GameNumber.From(power) - below, Is.EqualTo(diff));
+            Assert.That(below - GameNumber.From(power), Is.EqualTo(-diff));
+        }
+
+        [Test]
+        public void 지수_차이_16에서도_결과가_한_자릿수_내려가면_남는다()
+        {
+            // 1e15 − 0.6 = 999999999999999.4 → 15자리 999999999999999
+            Assert.That(GameNumber.From(1_000_000_000_000_000L) - GameNumber.From(0.6), Is.EqualTo(GameNumber.From(999_999_999_999_999L)));
+            // 1e15 − 0.4 = 999999999999999.6 → 1e15
+            Assert.That(GameNumber.From(1_000_000_000_000_000L) - GameNumber.From(0.4), Is.EqualTo(GameNumber.From(1_000_000_000_000_000L)));
+            // 지수 차이 17: 1e15 − 0.06은 그대로
+            Assert.That(GameNumber.From(1_000_000_000_000_000L) - GameNumber.From(0.06), Is.EqualTo(GameNumber.From(1_000_000_000_000_000L)));
+        }
+
+        [Test]
+        public void 같은_거리면_짝수_쪽으로_반올림()
+        {
+            // 1.00000000000000e15 + 0.5 = 1000000000000000.5 → 15자리 단위 10: 1000000000000000 (짝수 쪽)
+            Assert.That(GameNumber.From(1_000_000_000_000_000L) + GameNumber.From(5L), Is.EqualTo(GameNumber.From(1_000_000_000_000_000L)), "…0 + 5 → 짝수 …0");
+            Assert.That(GameNumber.From(1_000_000_000_000_010L) + GameNumber.From(5L), Is.EqualTo(GameNumber.From(1_000_000_000_000_020L)), "…1 + 5 → 짝수 …2");
+        }
+
+        [TestCase(long.MinValue)]
+        [TestCase(long.MinValue + 3)]
+        [TestCase(long.MaxValue - 1)]
+        public void 지수_양_끝에서_같은_값끼리_더하고_빼기(long e)
+        {
+            var a = GameNumber.From(1.0, e);
+            Assert.That(a + a, Is.EqualTo(GameNumber.From(2.0, e)), "예전에는 1e(최소) + 1e(최소) = 1e(최소)");
+            Assert.That(a - a, Is.EqualTo(GameNumber.Zero));
+            Assert.That(GameNumber.From(3.5, e) - GameNumber.From(1.25, e), Is.EqualTo(GameNumber.From(2.25, e)));
+        }
+
+        [TestCase(14)]
+        [TestCase(15)]
+        [TestCase(16)]
+        [TestCase(17)]
+        public void 지수_양_끝에서_차이가_15_전후(int gap)
+        {
+            foreach (var top in new[] { long.MinValue + 20, long.MaxValue - 1, 0L })
+            {
+                var a = GameNumber.From(1.0, top);
+                var b = GameNumber.From(6.0, top - gap);
+                // 1 + 6×10^−gap을 15자리(소수 14자리)로: gap 14 → 1.00000000000006, 15 → 1.000000000000006 → 반올림 1.00000000000001, 16·17 → 1
+                var expected = gap == 14 ? GameNumber.From(1.00000000000006, top) : gap == 15 ? GameNumber.From(1.00000000000001, top) : a;
+                Assert.That(a + b, Is.EqualTo(expected), "gap " + gap + ", top " + top);
+                Assert.That(b + a, Is.EqualTo(expected));
+            }
+            // 가장 먼 두 지수: 차이가 long을 넘어도 넘치지 않음
+            Assert.That(GameNumber.From(1.0, long.MaxValue) + GameNumber.From(1.0, long.MinValue), Is.EqualTo(GameNumber.From(1.0, long.MaxValue)));
+        }
+
+        /// <summary>정확한 기준: 정수 n × 10^e를 문자열로 15자리 짝수 반올림 (구현과 다른 방법).</summary>
+        static GameNumber Reference(System.Numerics.BigInteger n, long e)
+        {
+            if (n.IsZero) return GameNumber.Zero;
+            var neg = n.Sign < 0;
+            var digits = System.Numerics.BigInteger.Abs(n).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var exp = e + digits.Length - 1;
+            string head;
+            if (digits.Length <= 15) head = digits.PadRight(15, '0');
+            else
+            {
+                head = digits.Substring(0, 15);
+                var rest = digits.Substring(15);
+                var first = rest[0] - '0';
+                var tailNonZero = rest.Substring(1).Any(c => c != '0');
+                var roundUp = first > 5 || (first == 5 && (tailNonZero || (head[14] - '0') % 2 == 1));
+                if (roundUp)
+                {
+                    var up = (System.Numerics.BigInteger.Parse(head) + 1).ToString();
+                    if (up.Length > 15) { up = up.Substring(0, 15); exp++; }
+                    head = up;
+                }
+            }
+            var text = (neg ? "-" : "") + head[0] + (head.Substring(1).TrimEnd('0').Length > 0 ? "." + head.Substring(1).TrimEnd('0') : "") + "e" + exp;
+            Assert.That(GameNumber.TryParseSave(text, out var g), Is.True, text);
+            return g;
+        }
+
+        [Test]
+        public void 무작위_더하기_빼기는_정확한_값을_15자리로_반올림한_것과_같다()
+        {
+            var rng = new Random(1117);
+            for (var i = 0; i < 20000; i++)
+            {
+                long na = 100000000000000L + (long)(rng.NextDouble() * 899999999999999.0);
+                long nb = 100000000000000L + (long)(rng.NextDouble() * 899999999999999.0);
+                if (rng.Next(2) == 0) nb = -nb;
+                if (rng.Next(10) == 0) nb = -na + rng.Next(-3, 4); // 거의 상쇄
+                var ea = (long)rng.Next(-40, 40);
+                var gap = rng.Next(0, 20);
+                var eb = ea - gap;
+                GameNumber.TryParseSave(Text(na, ea), out var a);
+                GameNumber.TryParseSave(Text(nb, eb), out var b);
+                // 정확한 합 = na × 10^(ea−14) + nb × 10^(eb−14) = (na × 10^gap + nb) × 10^(eb−14)
+                var exact = new System.Numerics.BigInteger(na) * System.Numerics.BigInteger.Pow(10, gap) + nb;
+                var expected = Reference(exact, eb - 14);
+                Assert.That(a + b, Is.EqualTo(expected), a + " + " + b);
+                Assert.That(b + a, Is.EqualTo(expected), b + " + " + a);
+            }
+        }
+
+        static string Text(long n, long e)
+        {
+            var d = Math.Abs(n).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var frac = d.Substring(1).TrimEnd('0');
+            return (n < 0 ? "-" : "") + d[0] + (frac.Length > 0 ? "." + frac : "") + "e" + e;
+        }
+
+        [Test]
+        public void 열다섯_자리를_넘는_수는_구분하지_않는다()
+        {
+            // 설계상 성질 (C2 결정 Q1 A안): 유효 숫자 15자리. 1000000000000001은 1000000000000000과 같은 값이 된다.
+            Assert.That(GameNumber.From(1_000_000_000_000_001L), Is.EqualTo(GameNumber.From(1_000_000_000_000_000L)));
+        }
+
         // ---- 곱하기·나누기 ----
 
         [Test]
@@ -399,8 +537,9 @@ namespace ZodiacSignGuardian.Core.Tests.Numbers
         // ---- 기기마다 같은 결과 ----
 
         /// <summary>
-        /// 같은 계산을 어느 기기에서 해도 비트까지 같은지. 기대값은 dotnet(.NET 8)에서 이 코드로 얻은 값이며,
-        /// Unity(Mono)·Android(IL2CPP)에서 같은 값이 나와야 한다. 값이 달라지면 결정성이 깨진 것이다.
+        /// 같은 계산을 어느 기기에서 해도 비트까지 같은지. Unity(Mono)·Android(IL2CPP)에서도 같은 값이 나와야 한다.
+        /// 기대값은 별도의 파이썬 코드(덧셈은 decimal로 정확히 계산해 15자리 짝수 반올림)로 만들었고 dotnet 결과와 15개 모두 같다 (2026-11-17).
+        /// (예전 기대값은 덧셈에서 두 번 반올림하던 코드의 결과라 5번째 값이 달랐음)
         /// </summary>
         [Test]
         public void 정해진_계산의_결과는_기기와_상관없이_같다()
@@ -439,14 +578,14 @@ namespace ZodiacSignGuardian.Core.Tests.Numbers
             "6.54501657844694e6",
             "9.82563494164982e7",
             "2.17491237559175e9",
-            "3.10153239075325e2092",
-            "1.03384413026e2089",
+            "3.10153239075344e2092",
+            "1.03384413024e2089",
             "9.87776212584633e1000",
-            "3.20650105696381e4184",
-            "1.06883368566e4181",
+            "3.20650105696406e4184",
+            "1.06883368564e4181",
             "9.87776212584633e2000",
-            "3.31502229638595e6276",
-            "1.10500743213e6273",
+            "3.31502229638636e6276",
+            "1.10500743212e6273",
             "9.87776212584633e3000",
             "3.60156493578709e50068241381684",
             "2.77657079027914e-50068241381685",

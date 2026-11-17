@@ -15,8 +15,12 @@ namespace ZodiacSignGuardian.Core.Numbers
     /// </summary>
     public readonly struct GameNumber : IEquatable<GameNumber>, IComparable<GameNumber>
     {
-        /// <summary>더할 때 이보다 지수 차이가 크면 작은 쪽을 버린다. (유효 숫자 15자리 밖이라 반올림으로 어차피 사라짐)</summary>
-        public const int MaxDigitGap = 15;
+        /// <summary>
+        /// 더할 때 이보다 지수 차이가 크면 작은 쪽을 버린다. 차이가 17 이상이면 작은 쪽은 큰 쪽 가수의 마지막(15째) 자리 단위의
+        /// 1/100보다 작아, 큰 쪽이 10의 거듭제곱이어서 결과가 한 자릿수 아래로 내려가는 경우에도 반올림으로 남지 않는다.
+        /// 차이가 16이면 남을 수 있다: 1e15 − 0.6 = 999999999999999 (그래서 16까지는 정확히 계산한다).
+        /// </summary>
+        public const int MaxDigitGap = 16;
 
         /// <summary>
         /// 가수의 유효 숫자. 계산할 때마다 가수를 이 자리에서 반올림한다. 그래서 15자리 이하의 수(정수 포함)는
@@ -156,20 +160,109 @@ namespace ZodiacSignGuardian.Core.Numbers
 
         public static GameNumber operator -(GameNumber a) => a.IsZero ? a : new GameNumber(-a.Mantissa, a.Exponent);
 
+        /// <summary>
+        /// 더하기. 두 가수를 15자리 정수로 보고 정확히 더한 뒤 한 번만 15자리로 반올림한다(같은 거리면 짝수 쪽).
+        /// 그래서 결과가 15자리로 나타낼 수 있는 수면 정확히 그 값이 나온다 (1000000000000000 − 999999999999999 = 1).
+        /// <list type="bullet">
+        /// <item>지수 차이 0~3: long으로 계산 (|합| &lt; 1.001e18). 비슷한 두 수가 상쇄되는 것은 이 범위뿐이다.</item>
+        /// <item>지수 차이 4~16: BigInteger로 계산 (지수 차이가 크면 15자리 정수 × 10^차이가 long을 넘음).</item>
+        /// <item>지수 차이가 16보다 크면 작은 쪽은 반올림해도 남지 않으므로 큰 쪽을 그대로 돌려준다.</item>
+        /// </list>
+        /// (2026-11-17 Codex 검토: 예전에는 큰 쪽 자리에서 먼저 반올림해 1000000000000000 − 999999999999999가 0이 됐고,
+        ///  지수 차이 검사가 long.MinValue 근처에서 넘쳐 1e(최소) + 1e(최소)가 1e(최소)가 됐음)
+        /// </summary>
         public static GameNumber operator +(GameNumber a, GameNumber b)
         {
             if (a.IsZero) return b;
             if (b.IsZero) return a;
             if (a.Exponent < b.Exponent) { var t = a; a = b; b = t; }
-            // a.Exponent >= b.Exponent. 두 지수가 long 양 끝이면 빼기가 넘치므로 먼저 거른다.
-            if (b.Exponent < a.Exponent - MaxDigitGap) return a;
-            var gap = (int)(a.Exponent - b.Exponent);
-            // 큰 쪽의 자리(소수 14자리)에서 먼저 반올림한 뒤 맞춘다. 맞춘 뒤에만 반올림하면 비슷한 두 수를 뺄 때
-            // 가수의 이진 오차가 그대로 커져 100000000000001 - 100000000000000이 0.9992가 됐음.
-            // |raw| < 20이라 raw * 1e14 < 2e15로 정수가 정확한 범위다.
-            var raw = a.Mantissa + b.Mantissa / Pow10[gap];
-            raw = Math.Round(raw * RoundScale) / RoundScale;
-            return Normalize(raw, a.Exponent);
+            // a.Exponent >= b.Exponent이므로 참 차이는 0 ~ 2^64 − 1. ulong으로 빼면 넘치지 않는다.
+            var gap = unchecked((ulong)a.Exponent - (ulong)b.Exponent);
+            if (gap > MaxDigitGap) return a;
+            var na = Digits(a.Mantissa);
+            var nb = Digits(b.Mantissa);
+            // 합 = (na × 10^gap + nb) × 10^(b.Exponent − 14)
+            if (gap <= 3)
+            {
+                var sum = na * Pow10Long[gap] + nb;
+                return FromScaled(sum, b.Exponent);
+            }
+            var big = new System.Numerics.BigInteger(na) * System.Numerics.BigInteger.Pow(10, (int)gap) + nb;
+            return FromScaled(big, b.Exponent);
+        }
+
+        static readonly long[] Pow10Long =
+        {
+            1L, 10L, 100L, 1000L, 10000L, 100000L, 1000000L, 10000000L, 100000000L, 1000000000L,
+            10000000000L, 100000000000L, 1000000000000L, 10000000000000L, 100000000000000L, 1000000000000000L,
+            10000000000000000L, 100000000000000000L, 1000000000000000000L,
+        };
+
+        const long MinDigits = 100000000000000L;  // 10^14
+        const long MaxDigits = 1000000000000000L; // 10^15
+
+        /// <summary>맞춘 가수(15자리로 반올림된 값)를 부호 있는 15자리 정수로. 정확하다.</summary>
+        static long Digits(double mantissa) => (long)Math.Round(mantissa * RoundScale);
+
+        /// <summary>정수 값 n × 10^(baseExponent − 14)를 15자리로 반올림해 맞춘다. baseExponent는 n의 일의 자리가 가수의 소수 14째 자리인 지수.</summary>
+        static GameNumber FromScaled(long n, long baseExponent)
+        {
+            if (n == 0) return Zero;
+            var negative = n < 0;
+            var a = negative ? -n : n; // |n| < 1.001e18이라 넘치지 않음
+            var digits = 1;
+            while (digits < 19 && a >= Pow10Long[digits]) digits++;
+            var shift = digits - 15; // 양수면 버릴 자리 수, 음수면 모자란 자리 수
+            if (shift > 0)
+            {
+                var div = Pow10Long[shift];
+                var q = a / div;
+                var r = a - q * div;
+                var half = div / 2;
+                if (r > half || (r == half && (q & 1) == 1)) q++;
+                a = q;
+            }
+            else if (shift < 0)
+            {
+                a *= Pow10Long[-shift];
+            }
+            return Finish(negative, a, baseExponent, shift);
+        }
+
+        static GameNumber FromScaled(System.Numerics.BigInteger n, long baseExponent)
+        {
+            if (n.IsZero) return Zero;
+            var negative = n.Sign < 0;
+            var a = System.Numerics.BigInteger.Abs(n);
+            // 자리 수: 10^(digits−1) <= a < 10^digits
+            var digits = 1;
+            var p = System.Numerics.BigInteger.One * 10;
+            while (a >= p) { digits++; p *= 10; }
+            var shift = digits - 15;
+            long q;
+            if (shift > 0)
+            {
+                var div = System.Numerics.BigInteger.Pow(10, shift);
+                var qb = System.Numerics.BigInteger.DivRem(a, div, out var r);
+                var twice = r * 2;
+                if (twice > div || (twice == div && !qb.IsEven)) qb += 1;
+                q = (long)qb;
+            }
+            else
+            {
+                q = (long)a * Pow10Long[-shift];
+            }
+            return Finish(negative, q, baseExponent, shift);
+        }
+
+        /// <summary>15자리 정수 q(반올림으로 10^15가 됐을 수 있음)로 가수·지수를 만든다. 지수가 long을 넘으면 OverflowException.</summary>
+        static GameNumber Finish(bool negative, long q, long baseExponent, int shift)
+        {
+            if (q >= MaxDigits) { q /= 10; shift++; } // 999999999999999.5 → 1000000000000000
+            // 값 = q × 10^(baseExponent − 14 + shift), 가수 = q / 10^14 → 지수 = baseExponent + shift
+            var exponent = checked(baseExponent + shift);
+            var m = q / RoundScale; // 2^53 미만 정수 / 1e14: 어느 기기에서도 같은 가장 가까운 double
+            return new GameNumber(negative ? -m : m, exponent);
         }
 
         public static GameNumber operator -(GameNumber a, GameNumber b) => a + -b;

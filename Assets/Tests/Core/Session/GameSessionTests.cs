@@ -93,6 +93,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 일초를_60번에_나눠도_전투_칸은_10번()
         {
             var s = New();
+            s.SyncServerTime(KstMs(2026, 11, 16, 12, 0, 0), 1);
             long ticks = 0;
             for (var i = 0; i < 60; i++)
             {
@@ -109,6 +110,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 긴_프레임은_전투에_1초만_인정하고_동기화_누적에는_전부_더한다()
         {
             var s = New();
+            s.SyncServerTime(KstMs(2026, 11, 16, 12, 0, 0), 1);
             s.Advance(3.0);
             Assert.That(s.LastAdvanceTicks, Is.EqualTo(10));
             Assert.That(s.Clock.SyncElapsedUs, Is.EqualTo(3_000_000), "자르기 전 값");
@@ -316,6 +318,116 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 Is.EqualTo((save.Summary.SaveRevision, save.Summary.Chapter, save.Summary.Stardust, save.Summary.LastSavedUtcMs)));
             Assert.That(GameSessionLoader.TryReadSummary("{}", out _), Is.False);
             Assert.That(GameSessionLoader.TryReadSummary(null, out _), Is.False);
+        }
+
+        // ---- 허용한 입력으로 만든 상태는 언제나 다시 불러온다 (Codex 검토 2026-11-16) ----
+
+        static GameSession Reload(TableSet tables, GameSession s)
+        {
+            var r = GameSessionLoader.Load(tables, s.CreateSave().Json, Checked);
+            Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
+            return r.Session;
+        }
+
+        [Test]
+        public void 서버_시각을_받기_전에_진행하고_저장해도_불러온다()
+        {
+            var tables = TestTableSet();
+            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            s.Advance(1.0);
+            s.Advance(0.05);
+            Assert.That(s.Clock.SyncElapsedUs, Is.EqualTo(0), "기준 시각이 없으면 쌓지 않음 (2026-11-17 결정 ①)");
+            Assert.That(s.Battle.PendingUs, Is.EqualTo(50_000), "전투 누적은 따로 계속");
+            var b = Reload(tables, s);
+            Assert.That(b.Battle.PendingUs, Is.EqualTo(50_000));
+            Assert.That(b.Clock.AnchorUtcMs, Is.Null);
+            AssertNoViolations(s);
+        }
+
+        [Test]
+        public void 서버_시각을_받기_전에_나갔다_와서_저장해도_불러온다()
+        {
+            var tables = TestTableSet();
+            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            s.Advance(0.7);
+            s.Suspend();
+            s.Advance(5.0);
+            s.Resume(1);
+            s.Advance(0.6);
+            Assert.That(s.Clock.SyncElapsedUs, Is.EqualTo(0));
+            var b = Reload(tables, s);
+            // 불러온 뒤 첫 동기화부터 쌓는다
+            b.SyncServerTime(KstMs(2026, 11, 17, 9, 0, 0), 1);
+            b.Advance(2.0);
+            Assert.That(b.Clock.SyncElapsedUs, Is.EqualTo(2_000_000));
+            Reload(tables, b);
+            AssertNoViolations(s);
+            AssertNoViolations(b);
+        }
+
+        [Test]
+        public void 가장_늦은_서버_시각에서도_진행한_상태를_다시_불러온다()
+        {
+            var tables = TestTableSet();
+            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            s.SyncServerTime(Clock.MaxServerUtcMs, 1);
+            Assert.That(s.Advance(0.000999).Ok, Is.True, "9999-12-31 23:59:59.999999까지");
+            Assert.That(s.Clock.EstimatedUtcUs, Is.EqualTo(Clock.MaxEstimatedUtcUs));
+            AssertFailsUnchanged(s, () => s.Advance(0.000001), ErrorCode.InvalidInput);
+            AssertFailsUnchanged(s, () => s.Advance(0.001), ErrorCode.InvalidInput);
+            var b = Reload(tables, s);
+            Assert.That(b.EstimatedUtcMs, Is.EqualTo(Clock.MaxServerUtcMs));
+        }
+
+        [Test]
+        public void 처리한_구간이_가능한_범위의_끝이면_불러오고_밖이면_거부한다()
+        {
+            var tables = TestTableSet();
+            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            s.SyncServerTime(KstMs(2026, 11, 17, 12, 0, 0), 1);
+            var json = s.CreateSave().Json;
+            var c = s.Clock;
+            string With(string key, long v) => System.Text.RegularExpressions.Regex.Replace(json, "\"" + key + "\": -?\\d+", "\"" + key + "\": " + v);
+            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(Clock.MaxEstimatedUtcUs))).Ok, Is.True, "가장 늦은 날");
+            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(0))).Ok, Is.True, "가장 이른 날");
+            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(Clock.MaxEstimatedUtcUs))).Ok, Is.True);
+            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(0))).Ok, Is.True);
+            foreach (var (key, v) in new[]
+            {
+                ("processedDay", long.MaxValue), ("processedDay", c.DayIdAt(Clock.MaxEstimatedUtcUs) + 1), ("processedDay", c.DayIdAt(0) - 1), ("processedDay", long.MinValue),
+                ("processedWeek", long.MaxValue), ("processedWeek", c.WeekIdAt(Clock.MaxEstimatedUtcUs) + 1), ("processedWeek", c.WeekIdAt(0) - 1),
+            })
+            {
+                Assert.That(GameSessionLoader.Load(tables, With(key, v)).Ok, Is.False, key + " = " + v);
+            }
+            // 서버가 뒤로 보정된 상태(처리한 날 > 지금 추정 날)는 정상이라 불러온다
+            s.SyncServerTime(KstMs(2026, 11, 15, 12, 0, 0), 2);
+            Assert.That(s.Clock.DateGate(), Is.EqualTo(ErrorCode.TimeWentBack));
+            Reload(tables, s);
+        }
+
+        [Test]
+        public void 무작위_명령_뒤_언제_저장해도_다시_불러온다()
+        {
+            var tables = TestTableSet();
+            var rng = new System.Random(20261117);
+            for (var round = 0; round < 50; round++)
+            {
+                var s = GameSessionLoader.NewAccount(tables, (ulong)round, Checked);
+                long id = 0;
+                var syncs = rng.Next(3) == 0 ? 0 : 3; // 일부는 서버 시각을 한 번도 받지 않음
+                for (var i = 0; i < 200; i++)
+                {
+                    var k = rng.Next(12);
+                    if (k == 0 && syncs-- > 0) s.SyncServerTime(KstMs(2026, 11, 17, 4, 0, 0) + rng.Next(0, 7200000), ++id);
+                    else if (k == 1) s.Suspend();
+                    else if (k == 2) s.Resume(id + 1);
+                    else s.Advance(rng.NextDouble() * (rng.Next(10) == 0 ? 30 : 0.1));
+                    if (rng.Next(25) == 0) s = Reload(tables, s);
+                }
+                Reload(tables, s);
+                AssertNoViolations(s);
+            }
         }
 
         // ---- 틀린 저장 ----
