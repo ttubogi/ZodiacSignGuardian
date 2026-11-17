@@ -202,9 +202,8 @@ namespace ZodiacSignGuardian.Data.Tables
             int? boundary = daily == null ? (int?)null : (int)daily.Long("reset_hour") * 60;
             if (boundary == null)
             {
-                // period·reset_hour를 못 읽은 규칙이 있으면 daily 규칙이 없다고 단정하지 않는다 (이미 형식 문제)
-                if (set[Schemas.ResetRules].Rows.Any(r => !r.AllValid("period", "reset_hour"))) return;
-                Add(issues, TableIssueKind.Check6, name, 0, null, "reset_rules에 daily 규칙이 없어 하루 경계를 알 수 없음");
+                // daily 규칙이 없으면 하루 경계를 알 수 없어 05시 검사를 건너뛴다. daily 규칙 개수는 검사 10이 본다 (같은 문제를 두 번 내지 않게).
+                return;
             }
 
             var spans = new List<(TableRow row, int start, int end)>();
@@ -354,7 +353,8 @@ namespace ZodiacSignGuardian.Data.Tables
             }
         }
 
-        // 10. reset_rules의 utc_offset_min과 시계 설정 열은 모든 행에서 같은 값이다.
+        // 10. 시계 설정: reset_rules의 utc_offset_min과 시계 설정 열은 모든 행에서 같은 값이고,
+        //     daily·weekly 규칙은 각각 정확히 하나, anchor_valid_min은 sync_interval_min보다 크다. (열의 범위는 Schemas.Clock)
         public static readonly string[] SharedClockColumns = { "utc_offset_min", "sync_interval_min", "anchor_valid_min", "max_rtt_sec" };
 
         static void Check10_ClockSettings(TableSet set, List<TableIssue> issues)
@@ -374,6 +374,30 @@ namespace ZodiacSignGuardian.Data.Tables
                 {
                     Add(issues, TableIssueKind.Check10, t.Schema.Name, r.Line, col,
                         r.Long(col) + "이 첫 행(" + TableIssue.At(t.Source, first.Line) + ")의 " + first.Long(col) + "과 다름");
+                }
+            }
+
+            // 하루·주 경계 규칙은 각각 정확히 하나 (Core가 하나씩 쓴다, 2026-11-17 결정).
+            // period를 못 읽은 행이 있으면 개수를 단정하지 않는다 (이미 형식 문제)
+            if (!HasUnreadable(t, "period"))
+            {
+                foreach (var period in new[] { "daily", "weekly" })
+                {
+                    var count = t.Rows.Count(r => r.Str("period") == period);
+                    if (count != 1)
+                    {
+                        Add(issues, TableIssueKind.Check10, t.Schema.Name, 0, "period",
+                            period + " 규칙이 정확히 하나여야 함 (지금 " + count + "개)");
+                    }
+                }
+            }
+
+            foreach (var r in t.Rows.Where(r => r.AllValid("sync_interval_min", "anchor_valid_min")))
+            {
+                if (r.Long("anchor_valid_min") <= r.Long("sync_interval_min"))
+                {
+                    Add(issues, TableIssueKind.Check10, t.Schema.Name, r.Line, "anchor_valid_min",
+                        "anchor_valid_min(" + r.Long("anchor_valid_min") + ")은 sync_interval_min(" + r.Long("sync_interval_min") + ")보다 커야 함");
                 }
             }
         }

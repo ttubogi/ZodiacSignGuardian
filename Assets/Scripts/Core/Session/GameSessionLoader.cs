@@ -36,16 +36,21 @@ namespace ZodiacSignGuardian.Core.Session
         /// <summary>지금 만드는 빌드. 표의 build 열이 이 값인 행만 판정에 쓴다.</summary>
         public const string CurrentBuild = Schemas.M1;
 
-        public static GameSession NewAccount(TableSet tables, ulong seed, GameSessionOptions options = null)
+        /// <summary>
+        /// 새 계정. 표에서 Core가 쓰는 값을 읽지 못하면(규칙이 없거나 범위 밖) 예외 대신 Errors로 돌려준다.
+        /// tables가 null이면 ArgumentNullException(코드 잘못).
+        /// </summary>
+        public static SessionLoadResult NewAccount(TableSet tables, ulong seed, GameSessionOptions options = null)
         {
-            var (wallet, clock) = FromTables(tables);
-            return new GameSession(wallet, clock, new BattleAccumulator(), GameRng.FromSeed(seed), options);
+            var errors = new List<string>();
+            if (!TryFromTables(tables, errors, out var wallet, out var clock)) return new SessionLoadResult(null, errors);
+            return new SessionLoadResult(new GameSession(wallet, clock, new BattleAccumulator(), GameRng.FromSeed(seed), options), errors);
         }
 
         public static SessionLoadResult Load(TableSet tables, string saveJson, GameSessionOptions options = null)
         {
-            var (wallet, clock) = FromTables(tables);
             var errors = new List<string>();
+            if (!TryFromTables(tables, errors, out var wallet, out var clock)) return new SessionLoadResult(null, errors);
             if (!SaveFormat.TryRead(saveJson, out var d, out var error))
             {
                 errors.Add(error);
@@ -96,36 +101,86 @@ namespace ZodiacSignGuardian.Core.Session
             return true;
         }
 
-        static (Wallet, Clock) FromTables(TableSet tables)
+        /// <summary>
+        /// 표에서 Core가 쓰는 값을 읽는다. 표 검사(검사 10: daily·weekly 각 하나, 시계 설정 범위)를 통과한 표라면 늘 되지만,
+        /// 검사가 보장하지 못한 경우에도 예외 대신 오류로 돌려준다 (Codex 검토 2026-11-16). long을 int로 그냥 바꾸지 않는다.
+        /// </summary>
+        static bool TryFromTables(TableSet tables, List<string> errors, out Wallet wallet, out Clock clock)
         {
             if (tables == null) throw new ArgumentNullException(nameof(tables));
+            wallet = null;
+            clock = null;
+            var before = errors.Count;
+
             var currencies = new List<KeyValuePair<string, CurrencyKind>>();
             foreach (var r in tables[Schemas.Currencies].Rows)
             {
                 if (r.Build != CurrentBuild) continue;
+                if (!r.AllValid("currency_id", "number_type")) { errors.Add("currencies: " + r.Line + "번 행을 읽지 못함"); continue; }
                 var kind = r.Str("number_type") == "game_number" ? CurrencyKind.GameNumber : CurrencyKind.Integer;
                 currencies.Add(new KeyValuePair<string, CurrencyKind>(r.Str("currency_id"), kind));
             }
 
-            TableRow daily = null, weekly = null;
-            foreach (var r in tables[Schemas.ResetRules].Rows)
+            var rules = tables[Schemas.ResetRules].Rows;
+            var daily = One(rules, "daily", errors);
+            var weekly = One(rules, "weekly", errors);
+            var offlineRows = tables[Schemas.OfflineReward].Rows;
+            if (offlineRows.Count != 1) errors.Add("offline_reward: 행이 정확히 1개여야 함 (지금 " + offlineRows.Count + "개)");
+            if (errors.Count > before) return false;
+
+            var offline = offlineRows[0];
+            var ok = Int(daily, "utc_offset_min", errors, out var offset)
+                & Int(daily, "reset_hour", errors, out var dailyHour)
+                & Int(weekly, "reset_hour", errors, out var weeklyHour)
+                & Int(daily, "sync_interval_min", errors, out var syncInterval)
+                & Int(daily, "anchor_valid_min", errors, out var anchorValid)
+                & Int(daily, "max_rtt_sec", errors, out var maxRtt)
+                & Int(offline, "max_frame_sec", errors, out var maxFrame);
+            var weekday = -1;
+            if (!weekly.IsValid("weekday") || weekly.IsBlank("weekday")) { errors.Add("reset_rules.weekly.weekday: 값이 없음"); ok = false; }
+            else
             {
-                var period = r.Str("period");
-                if (period == "daily" && daily == null) daily = r;
-                if (period == "weekly" && weekly == null) weekly = r;
+                try { weekday = ClockConfig.WeekdayIndex(weekly.Str("weekday")); }
+                catch (ArgumentException e) { errors.Add("reset_rules.weekly.weekday: " + e.Message); ok = false; }
             }
-            if (daily == null || weekly == null) throw new ArgumentException("reset_rules에 daily·weekly 규칙이 있어야 함 (검사를 통과한 표만 넘길 것)", nameof(tables));
-            var offline = tables[Schemas.OfflineReward].Rows[0];
-            var config = new ClockConfig(
-                (int)daily.Long("utc_offset_min"),
-                (int)daily.Long("reset_hour"),
-                (int)weekly.Long("reset_hour"),
-                ClockConfig.WeekdayIndex(weekly.Str("weekday")),
-                (int)daily.Long("sync_interval_min"),
-                (int)daily.Long("anchor_valid_min"),
-                (int)daily.Long("max_rtt_sec"),
-                (int)offline.Long("max_frame_sec"));
-            return (new Wallet(currencies), new Clock(config));
+            if (!ok) return false;
+
+            try
+            {
+                var config = new ClockConfig(offset, dailyHour, weeklyHour, weekday, syncInterval, anchorValid, maxRtt, maxFrame);
+                clock = new Clock(config);
+                wallet = new Wallet(currencies);
+            }
+            catch (ArgumentException e)
+            {
+                errors.Add("시계·재화 설정이 맞지 않음: " + e.Message);
+                return false;
+            }
+            return true;
+        }
+
+        static TableRow One(IReadOnlyList<TableRow> rules, string period, List<string> errors)
+        {
+            TableRow found = null;
+            var count = 0;
+            foreach (var r in rules)
+            {
+                if (!r.IsValid("period") || r.Str("period") != period) continue;
+                count++;
+                found = r;
+            }
+            if (count != 1) { errors.Add("reset_rules: " + period + " 규칙이 정확히 하나여야 함 (지금 " + count + "개)"); return null; }
+            return found;
+        }
+
+        static bool Int(TableRow row, string column, List<string> errors, out int value)
+        {
+            value = 0;
+            if (!row.IsValid(column) || row.IsBlank(column)) { errors.Add(column + ": 값이 없음"); return false; }
+            var v = row.Long(column);
+            if (v < int.MinValue || v > int.MaxValue) { errors.Add(column + ": int 범위 밖 (" + v + ")"); return false; }
+            value = (int)v;
+            return true;
         }
     }
 }

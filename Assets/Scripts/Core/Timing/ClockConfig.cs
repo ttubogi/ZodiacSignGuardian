@@ -39,6 +39,7 @@ namespace ZodiacSignGuardian.Core.Timing
             if (weeklyWeekday < 0 || weeklyWeekday > 6) throw new ArgumentOutOfRangeException(nameof(weeklyWeekday), weeklyWeekday, "월 0 ~ 일 6");
             if (syncIntervalMin <= 0) throw new ArgumentOutOfRangeException(nameof(syncIntervalMin), syncIntervalMin, "양수");
             if (anchorValidMin <= 0) throw new ArgumentOutOfRangeException(nameof(anchorValidMin), anchorValidMin, "양수");
+            if (anchorValidMin <= syncIntervalMin) throw new ArgumentOutOfRangeException(nameof(anchorValidMin), anchorValidMin, "sync_interval_min보다 커야 함 (검사 10과 같은 규칙)");
             if (maxRttSec <= 0) throw new ArgumentOutOfRangeException(nameof(maxRttSec), maxRttSec, "양수");
             if (maxFrameSec <= 0) throw new ArgumentOutOfRangeException(nameof(maxFrameSec), maxFrameSec, "양수");
             UtcOffsetMin = utcOffsetMin;

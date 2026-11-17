@@ -488,6 +488,7 @@ namespace ZodiacSignGuardian.Core.Tests.Timing
             Assert.Throws<ArgumentOutOfRangeException>(() => new ClockConfig(540, 5, 5, 7, 5, 10, 5, 1));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ClockConfig(1441, 5, 5, 0, 5, 10, 5, 1));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ClockConfig(540, 5, 5, 0, 5, 0, 5, 1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ClockConfig(540, 5, 5, 0, 5, 5, 5, 1), "anchor_valid_min = sync_interval_min");
             Assert.That(ClockConfig.WeekdayIndex("mon"), Is.EqualTo(0));
             Assert.That(ClockConfig.WeekdayIndex("sun"), Is.EqualTo(6));
             Assert.Throws<ArgumentException>(() => ClockConfig.WeekdayIndex("Mon"));

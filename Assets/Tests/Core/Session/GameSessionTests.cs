@@ -35,7 +35,14 @@ namespace ZodiacSignGuardian.Core.Tests.Session
 
         static readonly GameSessionOptions Checked = new GameSessionOptions { CheckInvariants = true };
 
-        static GameSession New(ulong seed = 1) => GameSessionLoader.NewAccount(TestTableSet(), seed, Checked);
+        static GameSession NewOk(TableSet tables, ulong seed, GameSessionOptions options = null)
+        {
+            var r = GameSessionLoader.NewAccount(tables, seed, options);
+            Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
+            return r.Session;
+        }
+
+        static GameSession New(ulong seed = 1) => NewOk(TestTableSet(), seed, Checked);
 
         static void AssertNoViolations(GameSession s) => Assert.That(s.Violations, Is.Empty, string.Join("\n", s.Violations));
 
@@ -69,11 +76,46 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         [Test]
         public void 저장소의_실제_표로_만들면_설정이_표와_같다()
         {
-            var s = GameSessionLoader.NewAccount(RepoTableSet(), 1, Checked);
+            var s = NewOk(RepoTableSet(), 1, Checked);
             Assert.That(s.CurrencyIds, Is.EqualTo(new[] { "stardust", "galaxy_crystal", "star_fragment", "enhance_stone" }));
             var c = s.Clock.Config;
             Assert.That((c.UtcOffsetMin, c.DailyResetHour, c.WeeklyResetHour, c.WeeklyWeekday), Is.EqualTo((540, 5, 5, 0)));
             Assert.That((c.SyncIntervalMin, c.AnchorValidMin, c.MaxRttSec, c.MaxFrameSec), Is.EqualTo((5, 10, 5, 1)));
+        }
+
+        // ---- 표 검사를 거치지 않은 표가 와도 예외 대신 오류 (Codex 검토 2026-11-16) ----
+
+        /// <summary>검사 없이 읽기만 한 표 묶음 (표 검사가 막아야 할 표를 일부러 만든다).</summary>
+        static TableSet ParsedOnly(Dictionary<string, string> texts)
+        {
+            // 칸 형식 문제(범위 밖 등)가 있어도 읽은 표를 그대로 넘긴다. 못 읽은 칸은 비어 있는 것으로 보인다.
+            return TableLoader.LoadTexts(texts, new List<TableIssue>());
+        }
+
+        [TestCase("weekly,weekly,5,mon,,540,5,10,5\n", "", "weekly 규칙이 정확히 하나여야 함 (지금 0개)")]
+        [TestCase("daily,daily,5,,,540,5,10,5\n", "", "daily 규칙이 정확히 하나여야 함 (지금 0개)")]
+        [TestCase("daily,daily,5,,,540,5,10,5\n", "daily,daily,5,,,540,5,10,5\nd2,daily,6,,,540,5,10,5\n", "daily 규칙이 정확히 하나여야 함 (지금 2개)")]
+        [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,4294967301,10,5", "sync_interval_min")]
+        [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,5,3,5", "시계·재화 설정이 맞지 않음")]
+        public void 세션을_만들_수_없는_표는_예외_없이_오류로_돌려준다(string from, string to, string message)
+        {
+            var tables = ParsedOnly(TestTables.Good().Replace("reset_rules", from, to));
+            SessionLoadResult made = null, loaded = null;
+            Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1));
+            Assert.That(made.Ok, Is.False);
+            Assert.That(made.Errors.Any(e => e.Contains(message)), Is.True, string.Join("\n", made.Errors));
+            var good = GoodSave(out _);
+            Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, good));
+            Assert.That(loaded.Ok, Is.False);
+            // 표 검사는 같은 표를 막는다
+            Assert.That(TableBuilder.BuildFromTexts(TestTables.Good().Replace("reset_rules", from, to)).Ok, Is.False);
+        }
+
+        [Test]
+        public void 시계_설정을_읽기_전용으로_볼_수_있다()
+        {
+            var s = GameSessionLoader.NewAccount(RepoTableSet(), 1).Session;
+            Assert.That((s.ClockSettings.SyncIntervalMin, s.ClockSettings.MaxRttSec, s.ClockSettings.AnchorValidMin), Is.EqualTo((5, 5, 10)));
         }
 
         // ---- Advance ----
@@ -224,7 +266,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
 
         static GameSession Played(TableSet tables, ulong seed)
         {
-            var s = GameSessionLoader.NewAccount(tables, seed, Checked);
+            var s = NewOk(tables, seed, Checked);
             s.SyncServerTime(KstMs(2026, 11, 16, 4, 59, 0), 1);
             for (var i = 0; i < 100; i++) s.Advance(0.73);
             var events = new List<GameEvent>();
@@ -302,7 +344,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 요약은_장_별가루_마지막_저장_시각이고_표_없이도_읽는다()
         {
             var tables = RepoTableSet();
-            var s = GameSessionLoader.NewAccount(tables, 9, Checked);
+            var s = NewOk(tables, 9, Checked);
             Assert.That(s.CreateSave().Summary.LastSavedUtcMs, Is.Null, "서버 시각을 받기 전");
             s.SyncServerTime(KstMs(2026, 11, 16, 20, 0, 0), 1);
             s.Wallet.Apply(CurrencyChange.Of("stardust", GameNumber.From(3.5, 12)), CurrencyReason.Hunt, new List<GameEvent>());
@@ -333,7 +375,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 서버_시각을_받기_전에_진행하고_저장해도_불러온다()
         {
             var tables = TestTableSet();
-            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            var s = NewOk(tables, 1, Checked);
             s.Advance(1.0);
             s.Advance(0.05);
             Assert.That(s.Clock.SyncElapsedUs, Is.EqualTo(0), "기준 시각이 없으면 쌓지 않음 (2026-11-17 결정 ①)");
@@ -348,7 +390,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 서버_시각을_받기_전에_나갔다_와서_저장해도_불러온다()
         {
             var tables = TestTableSet();
-            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            var s = NewOk(tables, 1, Checked);
             s.Advance(0.7);
             s.Suspend();
             s.Advance(5.0);
@@ -369,7 +411,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 가장_늦은_서버_시각에서도_진행한_상태를_다시_불러온다()
         {
             var tables = TestTableSet();
-            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            var s = NewOk(tables, 1, Checked);
             s.SyncServerTime(Clock.MaxServerUtcMs, 1);
             Assert.That(s.Advance(0.000999).Ok, Is.True, "9999-12-31 23:59:59.999999까지");
             Assert.That(s.Clock.EstimatedUtcUs, Is.EqualTo(Clock.MaxEstimatedUtcUs));
@@ -383,7 +425,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 처리한_구간이_가능한_범위의_끝이면_불러오고_밖이면_거부한다()
         {
             var tables = TestTableSet();
-            var s = GameSessionLoader.NewAccount(tables, 1, Checked);
+            var s = NewOk(tables, 1, Checked);
             s.SyncServerTime(KstMs(2026, 11, 17, 12, 0, 0), 1);
             var json = s.CreateSave().Json;
             var c = s.Clock;
@@ -413,7 +455,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var rng = new System.Random(20261117);
             for (var round = 0; round < 50; round++)
             {
-                var s = GameSessionLoader.NewAccount(tables, (ulong)round, Checked);
+                var s = NewOk(tables, (ulong)round, Checked);
                 long id = 0;
                 var syncs = rng.Next(3) == 0 ? 0 : 3; // 일부는 서버 시각을 한 번도 받지 않음
                 for (var i = 0; i < 200; i++)
@@ -569,7 +611,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         [Test]
         public void 위반_검사를_끄면_보지_않는다()
         {
-            var s = GameSessionLoader.NewAccount(TestTableSet(), 1, new GameSessionOptions { CheckInvariants = false });
+            var s = NewOk(TestTableSet(), 1, new GameSessionOptions { CheckInvariants = false });
             s.Execute("망가뜨림", events =>
             {
                 s.Wallet.CorruptBalanceForTest("gold", CurrencyAmount.Of(-5L));

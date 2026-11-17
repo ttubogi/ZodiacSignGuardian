@@ -113,6 +113,10 @@ namespace ZodiacSignGuardian.Core.Session
         // ---- View·Services가 읽는 값 (Data 형식을 드러내지 않음) ----
 
         public TimeStatus TimeStatus => Clock.Status;
+        /// <summary>
+        /// 시계 설정(읽기 전용). Services는 동기화 간격(SyncIntervalMin)·응답 왕복 허용(MaxRttSec)을 여기서 읽는다 (Codex 검토 2026-11-16).
+        /// </summary>
+        public ClockConfig ClockSettings => Clock.Config;
         public CurrencyAmount Balance(string currencyId) => Wallet.Balance(currencyId);
         public IReadOnlyList<string> CurrencyIds => Wallet.CurrencyIds;
         /// <summary>추정 서버 시각(ms, 내림). 서버 시각을 한 번도 받지 않았으면 null.</summary>
