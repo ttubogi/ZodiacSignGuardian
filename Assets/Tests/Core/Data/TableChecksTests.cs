@@ -76,8 +76,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [TestCase("daily_missions", "kill_monster,100,", "kill_monster,-5,", "target_count")]
         [TestCase("weekday_dungeons", "dungeon_tue,dungeon_key,2", "dungeon_tue,dungeon_key,1.5", "free_entries")]
         [TestCase("ad_buffs", "hunt_double,2,30", "hunt_double,2,0", "duration_min")]
-        [TestCase("offline_reward", "720,1,2,1", "720,1,2,abc", "max_frame_sec")]
-        [TestCase("reset_rules", "daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,0,10,5", "sync_interval_min")]
+        [TestCase("offline_reward", "720,1,2,1", "720,1,0,1", "ad_multiplier")]
         public void 검사3_양의_정수가_아니면_잡는다(string table, string from, string to, string column)
         {
             var issues = Run(Good().Replace(table, from, to));
@@ -334,15 +333,15 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         }
 
         [Test]
-        public void 검사6_daily_규칙이_없으면_경계를_알_수_없다고_알린다()
+        public void daily_규칙이_없으면_검사10이_알리고_검사6은_같은_문제를_다시_내지_않는다()
         {
             // 일일 임무는 daily 규칙만 가리킬 수 있으므로 검사 2도 함께 걸린다
             var t = Good().Replace("reset_rules", "daily,daily,5,,,540,5,10,5\n", "")
                 .Replace("daily_missions", ",daily,", ",weekly,");
             var issues = Run(t);
-            AssertHas(issues, TableIssueKind.Check6);
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check10 && i.Message.StartsWith("daily 규칙이 정확히 하나")), Is.True, Describe(issues));
             AssertHas(issues, TableIssueKind.Check2);
-            Assert.That(issues.All(i => i.Kind == TableIssueKind.Check6 || i.Kind == TableIssueKind.Check2), Is.True, Describe(issues));
+            Assert.That(issues.All(i => i.Kind == TableIssueKind.Check10 || i.Kind == TableIssueKind.Check2), Is.True, Describe(issues));
         }
 
         // ---- 7. m1 → v1 참조 ----
@@ -473,6 +472,79 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             var issues = Run(Good().Replace("reset_rules", from, to));
             AssertOnly(issues, TableIssueKind.Check10);
             Assert.That(issues[0].Column, Is.EqualTo(column));
+        }
+
+        // ---- 10. daily·weekly 개수와 시계 설정 범위 (2026-11-17 결정, Codex 검토) ----
+
+        [TestCase("weekly,weekly,5,mon,,540,5,10,5\n", "", "weekly 규칙이 정확히 하나여야 함 (지금 0개)")]
+        [TestCase("weekly,weekly,5,mon,,540,5,10,5\n", "weekly,weekly,5,mon,,540,5,10,5\nweekly2,weekly,6,tue,,540,5,10,5\n", "weekly 규칙이 정확히 하나여야 함 (지금 2개)")]
+        [TestCase("daily,daily,5,,,540,5,10,5\n", "daily,daily,5,,,540,5,10,5\ndaily2,daily,6,,,540,5,10,5\n", "daily 규칙이 정확히 하나여야 함 (지금 2개)")]
+        public void 검사10_daily와_weekly는_각각_정확히_하나(string from, string to, string message)
+        {
+            var issues = Run(Good().Replace("reset_rules", from, to));
+            AssertOnly(issues, TableIssueKind.Check10);
+            Assert.That(issues.Single().Message, Is.EqualTo(message));
+        }
+
+        static string Rule(string id, string period, string hour, string weekday, string cycle, long offset, long sync, long anchor, long rtt)
+            => id + "," + period + "," + hour + "," + weekday + "," + cycle + "," + offset + "," + sync + "," + anchor + "," + rtt + "\n";
+
+        static Dictionary<string, string> WithClock(long offset, long sync, long anchor, long rtt)
+        {
+            var t = Good();
+            t["reset_rules.csv"] = "rule_id,period,reset_hour,weekday,cycle_days,utc_offset_min,sync_interval_min,anchor_valid_min,max_rtt_sec\n"
+                + Rule("daily", "daily", "5", "", "", offset, sync, anchor, rtt)
+                + Rule("weekly", "weekly", "5", "mon", "", offset, sync, anchor, rtt)
+                + Rule("attendance_cycle", "cycle", "", "", "3", offset, sync, anchor, rtt);
+            return t;
+        }
+
+        [TestCase(-720, 1, 2, 1)]
+        [TestCase(840, 59, 1440, 60)]
+        [TestCase(0, 60, 61, 60)]
+        public void 검사10_시계_설정_경계값은_통과(long offset, long sync, long anchor, long rtt)
+        {
+            AssertNone(Run(WithClock(offset, sync, anchor, rtt)));
+        }
+
+        [TestCase(-721, 5, 10, 5, "utc_offset_min")]
+        [TestCase(841, 5, 10, 5, "utc_offset_min")]
+        [TestCase(540, 0, 10, 5, "sync_interval_min")]
+        [TestCase(540, 61, 100, 5, "sync_interval_min")]
+        [TestCase(540, 5, 1441, 5, "anchor_valid_min")]
+        [TestCase(540, 5, 10, 0, "max_rtt_sec")]
+        [TestCase(540, 5, 10, 61, "max_rtt_sec")]
+        [TestCase(540, 4294967301, 10, 5, "sync_interval_min")]
+        public void 검사10_시계_설정이_범위_밖이면_잡는다(long offset, long sync, long anchor, long rtt, string column)
+        {
+            var issues = Run(WithClock(offset, sync, anchor, rtt));
+            AssertOnly(issues, TableIssueKind.Check10);
+            Assert.That(issues.Select(i => i.Column).Distinct(), Is.EqualTo(new[] { column }), Describe(issues));
+        }
+
+        [TestCase(5, 5)]
+        [TestCase(10, 5)]
+        public void 검사10_anchor_valid_min은_sync_interval_min보다_커야_한다(long sync, long anchor)
+        {
+            var issues = Run(WithClock(540, sync, anchor, 5));
+            AssertOnly(issues, TableIssueKind.Check10);
+            Assert.That(issues.All(i => i.Column == "anchor_valid_min" && i.Message.Contains("보다 커야 함")), Is.True, Describe(issues));
+        }
+
+        [TestCase("720,1,2,1", "720,1,2,0")]
+        [TestCase("720,1,2,1", "720,1,2,61")]
+        [TestCase("720,1,2,1", "720,1,2,abc")]
+        public void 검사10_max_frame_sec이_범위_밖이면_잡는다(string from, string to)
+        {
+            var issues = Run(Good().Replace("offline_reward", from, to));
+            AssertOnly(issues, TableIssueKind.Check10);
+            Assert.That(issues.Single().Column, Is.EqualTo("max_frame_sec"));
+        }
+
+        [Test]
+        public void 검사10_max_frame_sec_경계값은_통과()
+        {
+            AssertNone(Run(Good().Replace("offline_reward", "720,1,2,1", "720,1,2,60")));
         }
 
         [Test]

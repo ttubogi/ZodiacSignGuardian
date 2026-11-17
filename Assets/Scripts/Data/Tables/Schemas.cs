@@ -20,6 +20,13 @@ namespace ZodiacSignGuardian.Data.Tables
         static ColumnSpec Text(string name) => new ColumnSpec(name, ColumnKind.Text);
         static ColumnSpec Pos(string name, bool optional = false) => new ColumnSpec(name, ColumnKind.PositiveInt, optional);
         static ColumnSpec Build() => new ColumnSpec("build", ColumnKind.Build);
+
+        /// <summary>
+        /// 시계 설정 열 (검사 10). 범위는 2026-11-17 결정: utc_offset_min −720~840, sync_interval_min 1~60, anchor_valid_min 1~1440,
+        /// max_rtt_sec 1~60, max_frame_sec 1~60. Core가 int로 받으므로 범위 밖 값이 표 검사를 지나가지 않게 한다
+        /// (예전에는 sync_interval_min 4294967301이 통과해 int로 5가 됐음, Codex 검토 2026-11-16).
+        /// </summary>
+        static ColumnSpec Clock(string name, long min, long max) => new ColumnSpec(name, ColumnKind.IntRange, min: min, max: max, issueKind: TableIssueKind.Check10);
         static ColumnSpec Enum(string name, params string[] values) => new ColumnSpec(name, ColumnKind.Enum, enumValues: values);
 
         // ---- 날짜별 규칙 표 ----
@@ -30,10 +37,10 @@ namespace ZodiacSignGuardian.Data.Tables
             new ColumnSpec("reset_hour", ColumnKind.IntRange, optional: true, min: 0, max: 23),
             new ColumnSpec("weekday", ColumnKind.Weekday, optional: true),
             Pos("cycle_days", optional: true),
-            new ColumnSpec("utc_offset_min", ColumnKind.IntRange, min: -720, max: 840),
-            Pos("sync_interval_min"),
-            Pos("anchor_valid_min"),
-            Pos("max_rtt_sec"));
+            Clock("utc_offset_min", -720, 840),
+            Clock("sync_interval_min", 1, 60),
+            Clock("anchor_valid_min", 1, 1440),
+            Clock("max_rtt_sec", 1, 60));
 
         public static readonly TableSchema DailyMissions = new TableSchema("daily_missions", "mission_id", null, false,
             Id("mission_id"),
@@ -55,7 +62,7 @@ namespace ZodiacSignGuardian.Data.Tables
             Pos("max_minutes"),
             Pos("min_minutes"),
             Pos("ad_multiplier"),
-            Pos("max_frame_sec"));
+            Clock("max_frame_sec", 1, 60));
 
         public static readonly TableSchema WeekdayDungeons = new TableSchema("weekday_dungeons", "weekday", V1, false,
             new ColumnSpec("weekday", ColumnKind.Weekday),
