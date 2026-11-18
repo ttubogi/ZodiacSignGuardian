@@ -87,6 +87,9 @@ namespace ZodiacSignGuardian.Core.Rewards
             return true;
         }
 
+        /// <summary>테스트용: 받은 기록을 잊는다(같은 날 두 번 지급하는 잘못을 일부러 만든다, 위반 규칙 2 주입).</summary>
+        internal void ForgetClaimForTest() => LastClaimedDay = null;
+
         public bool SameState(Attendance o) => o != null && o.NextDay == NextDay && o.LastClaimedDay == LastClaimedDay;
 
         public Attendance Clone() => new Attendance(CycleDays, _rows.Values) { NextDay = NextDay, LastClaimedDay = LastClaimedDay };
