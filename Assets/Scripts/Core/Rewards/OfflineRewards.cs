@@ -128,7 +128,9 @@ namespace ZodiacSignGuardian.Core.Rewards
             var room = Config.MaxMinutes - BundleMinutes;
             if (minutes > room) minutes = room;
 
-            if (minutes > 0 && rate.Sign > 0)
+            // 새 묶음 번호를 낼 수 없으면(다음 번호가 long 끝) 이 정산분은 더하지 않고 정산만 끝낸다
+            var canHoldBundle = HasBundle || NextBundleId < long.MaxValue;
+            if (minutes > 0 && rate.Sign > 0 && canHoldBundle)
             {
                 GameNumber added;
                 bool ok;
@@ -168,11 +170,27 @@ namespace ZodiacSignGuardian.Core.Rewards
             BundleAdApplied = true;
         }
 
-        /// <summary>받을 금액(배율 적용). 묶음이 없거나 금액이 0이면 null.</summary>
-        public GameNumber? PayoutOrNull()
+        /// <summary>받을 수 있는 묶음이 있다(묶음이 있고 금액이 0보다 큼). 배율 계산은 하지 않는다.</summary>
+        public bool HasClaimableBundle => HasBundle && BundleAmount.Sign > 0;
+
+        /// <summary>
+        /// 받을 금액(광고 적용이면 ad_multiplier배, 아니면 1배). 받을 묶음이 없으면 NotReady,
+        /// 배율을 곱한 값이 GameNumber 범위를 넘으면 InvalidInput(예외를 내지 않음).
+        /// </summary>
+        public ErrorCode? CheckPayout(out GameNumber payout)
         {
-            if (!HasBundle || BundleAmount.Sign <= 0) return null;
-            return BundleAdApplied ? BundleAmount * Config.AdMultiplier : BundleAmount;
+            payout = GameNumber.Zero;
+            if (!HasClaimableBundle) return ErrorCode.NotReady;
+            if (!BundleAdApplied) { payout = BundleAmount; return null; }
+            try
+            {
+                payout = BundleAmount * Config.AdMultiplier;
+                return null;
+            }
+            catch (OverflowException)
+            {
+                return ErrorCode.InvalidInput;
+            }
         }
 
         /// <summary>받은 뒤 묶음을 끝낸다.</summary>

@@ -332,5 +332,74 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(h.S.OfflineBundle, Is.Null);
             Assert.That(h.Dust, Is.EqualTo(GameNumber.From(300)));
         }
+
+        // ---- 아주 큰 값: 예외 없이 명령 결과로 끝나고 저장은 다시 읽힌다 ----
+
+        static void AssertSaveLoads(C3Harness h, string where)
+        {
+            var r = GameSessionLoader.Load(h.T, h.S.CreateSave().Json, DefaultNonce ^ 2);
+            Assert.That(r.Ok, Is.True, where + ": " + string.Join("\n", r.Errors));
+        }
+
+        [Test]
+        public void 정산_금액이_GameNumber_범위를_넘으면_그_정산분은_버리고_정산은_끝낸다()
+        {
+            var h = Started();
+            h.S.OfflineRateForStage = _ => GameNumber.From(1.0, long.MaxValue); // 분당 1e(long 끝): 30분이면 범위 밖
+            System.Collections.Generic.List<GameEvent> e = null;
+            Assert.DoesNotThrow(() => e = h.AwayAndBack(T0 + 30 * Min));
+            Assert.That(e.OfType<OfflineRewardReady>(), Is.Empty);
+            Assert.That(h.S.OfflineBundle, Is.Null);
+            Assert.That(h.S.Offline.SettlementPointUtcMs, Is.EqualTo(T0 + 30 * Min), "정산은 끝남");
+            Assert.That(h.S.SettlementPending, Is.False);
+            AssertSaveLoads(h, "버린 뒤");
+        }
+
+        [Test]
+        public void 광고_배율을_곱한_값이_범위를_넘으면_수령은_InvalidInput이고_예외도_상태_변화도_없다()
+        {
+            // 분당 1e(끝-1) × 60분 = 6e(끝): 1배는 범위 안, 2배는 범위 밖
+            var big = GameNumber.From(1.0, long.MaxValue - 1);
+            var h = Started();
+            h.S.OfflineRateForStage = _ => big;
+            h.AwayAndBack(T0 + 60 * Min);
+            Assert.That(h.S.OfflineBundle.Amount, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)));
+            Assert.DoesNotThrow(() => h.Ok(h.S.ConfirmAd(h.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline))));
+            Assert.DoesNotThrow(() => h.AssertFailsUnchanged(() => h.S.ClaimOffline(), ErrorCode.InvalidInput));
+            Assert.DoesNotThrow(() => h.AssertFailsUnchanged(() => h.S.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline), ErrorCode.AlreadyClaimed));
+            AssertSaveLoads(h, "광고 적용 큰 묶음");
+
+            // 광고 없이 받으면 1배는 받는다
+            var plain = Started();
+            plain.S.OfflineRateForStage = _ => big;
+            plain.AwayAndBack(T0 + 60 * Min);
+            plain.Ok(plain.S.ClaimOffline());
+            Assert.That(plain.Dust, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)));
+            AssertSaveLoads(plain, "큰 잔액");
+        }
+
+        [Test]
+        public void 다음_묶음_번호가_long_끝에_닿으면_새_묶음을_만들지_않고_정산만_끝낸다()
+        {
+            var h = Started();
+            var errors = new System.Collections.Generic.List<string>();
+            Assert.That(h.S.Offline.TryRestore(T0, 0, 1, long.MaxValue - 1, 0, 0, GameNumber.Zero, false, errors), Is.True, string.Join(",", errors));
+
+            h.AwayAndBack(T0 + 30 * Min);
+            Assert.That(h.S.OfflineBundle.Id, Is.EqualTo(long.MaxValue - 1), "끝 바로 앞 번호는 쓴다");
+            Assert.That(h.S.Offline.NextBundleId, Is.EqualTo(long.MaxValue));
+            h.AwayAndBack(T0 + 40 * Min);
+            Assert.That(h.S.OfflineBundle.Minutes, Is.EqualTo(40), "있는 묶음에는 더한다");
+            AssertSaveLoads(h, "다음 번호 끝");
+            h.Ok(h.S.ClaimOffline());
+
+            System.Collections.Generic.List<GameEvent> e = null;
+            Assert.DoesNotThrow(() => e = h.AwayAndBack(T0 + 70 * Min));
+            Assert.That(e.OfType<OfflineRewardReady>(), Is.Empty);
+            Assert.That(h.S.OfflineBundle, Is.Null, "새 번호를 낼 수 없음");
+            Assert.That(h.S.Offline.SettlementPointUtcMs, Is.EqualTo(T0 + 70 * Min));
+            Assert.That(h.S.Offline.NextBundleId, Is.EqualTo(long.MaxValue), "넘쳐 음수가 되지 않음");
+            AssertSaveLoads(h, "번호를 못 낸 뒤");
+        }
     }
 }

@@ -289,7 +289,7 @@ namespace ZodiacSignGuardian.Core.Session
                 long bundle = 0;
                 if (target == AdTarget.Offline)
                 {
-                    if (Offline.PayoutOrNull() == null) return ErrorCode.NotReady;
+                    if (!Offline.HasClaimableBundle) return ErrorCode.NotReady;
                     if (Offline.BundleAdApplied) return ErrorCode.AlreadyClaimed;
                     bundle = Offline.BundleId;
                 }
@@ -320,7 +320,7 @@ namespace ZodiacSignGuardian.Core.Session
 
         /// <summary>
         /// 오프라인 수령. 날짜 의존 기능(TimeNotVerified·TimeWentBack이 먼저), 미수령이 없거나 금액이 0이면 NotReady.
-        /// 광고 적용이면 ad_multiplier배, 아니면 1배를 별가루로 지급하고, 묶음을 끝내고 그 묶음의 열린 광고 번호를 무효로 한다(한 상태 변경).
+        /// 광고 적용이면 ad_multiplier배(곱한 값이 범위를 넘으면 InvalidInput), 아니면 1배를 별가루로 지급하고, 묶음을 끝내고 그 묶음의 열린 광고 번호를 무효로 한다(한 상태 변경).
         /// claim_offline 임무를 1 센다(명령 시각).
         /// </summary>
         public CommandResult ClaimOffline()
@@ -329,9 +329,10 @@ namespace ZodiacSignGuardian.Core.Session
             {
                 var gate = Clock.DateGate();
                 if (gate != null) return gate;
-                var payout = Offline.PayoutOrNull();
-                if (payout == null || !Wallet.Has(StardustId)) return ErrorCode.NotReady;
-                var change = CurrencyChange.Of(StardustId, payout.Value);
+                if (!Wallet.Has(StardustId)) return ErrorCode.NotReady;
+                var payoutError = Offline.CheckPayout(out var payout);
+                if (payoutError != null) return payoutError;
+                var change = CurrencyChange.Of(StardustId, payout);
                 var error = Wallet.Check(change);
                 if (error != null) return error;
                 // 여기부터 바꾼다
