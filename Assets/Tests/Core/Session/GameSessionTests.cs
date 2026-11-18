@@ -33,11 +33,13 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             return r.Tables;
         }
 
+        internal const ulong Nonce = 0x5eed5eed5eed5eedUL;
+
         static readonly GameSessionOptions Checked = new GameSessionOptions { CheckInvariants = true };
 
         static GameSession NewOk(TableSet tables, ulong seed, GameSessionOptions options = null)
         {
-            var r = GameSessionLoader.NewAccount(tables, seed, options);
+            var r = GameSessionLoader.NewAccount(tables, seed, Nonce, options);
             Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
             return r.Session;
         }
@@ -96,16 +98,16 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         [TestCase("daily,daily,5,,,540,5,10,5\n", "", "daily 규칙이 정확히 하나여야 함 (지금 0개)")]
         [TestCase("daily,daily,5,,,540,5,10,5\n", "daily,daily,5,,,540,5,10,5\nd2,daily,6,,,540,5,10,5\n", "daily 규칙이 정확히 하나여야 함 (지금 2개)")]
         [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,4294967301,10,5", "sync_interval_min")]
-        [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,5,3,5", "시계·재화 설정이 맞지 않음")]
+        [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,5,3,5", "시계·재화·오프라인 설정이 맞지 않음")]
         public void 세션을_만들_수_없는_표는_예외_없이_오류로_돌려준다(string from, string to, string message)
         {
             var tables = ParsedOnly(TestTables.Good().Replace("reset_rules", from, to));
             SessionLoadResult made = null, loaded = null;
-            Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1));
+            Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1, Nonce));
             Assert.That(made.Ok, Is.False);
             Assert.That(made.Errors.Any(e => e.Contains(message)), Is.True, string.Join("\n", made.Errors));
             var good = GoodSave(out _);
-            Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, good));
+            Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, good, Nonce));
             Assert.That(loaded.Ok, Is.False);
             // 표 검사는 같은 표를 막는다
             Assert.That(TableBuilder.BuildFromTexts(TestTables.Good().Replace("reset_rules", from, to)).Ok, Is.False);
@@ -114,7 +116,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         [Test]
         public void 시계_설정을_읽기_전용으로_볼_수_있다()
         {
-            var s = GameSessionLoader.NewAccount(RepoTableSet(), 1).Session;
+            var s = GameSessionLoader.NewAccount(RepoTableSet(), 1, Nonce).Session;
             Assert.That((s.ClockSettings.SyncIntervalMin, s.ClockSettings.MaxRttSec, s.ClockSettings.AnchorValidMin), Is.EqualTo((5, 5, 10)));
         }
 
@@ -283,7 +285,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var save = a.CreateSave();
             Assert.That(save.SaveRevision, Is.EqualTo(1));
 
-            var loaded = GameSessionLoader.Load(tables, save.Json, Checked);
+            var loaded = GameSessionLoader.Load(tables, save.Json, Nonce, Checked);
             Assert.That(loaded.Ok, Is.True, string.Join("\n", loaded.Errors));
             var b = loaded.Session;
             Assert.That(b.Wallet.SameState(a.Wallet), Is.True);
@@ -366,7 +368,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
 
         static GameSession Reload(TableSet tables, GameSession s)
         {
-            var r = GameSessionLoader.Load(tables, s.CreateSave().Json, Checked);
+            var r = GameSessionLoader.Load(tables, s.CreateSave().Json, Nonce, Checked);
             Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
             return r.Session;
         }
@@ -430,17 +432,17 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var json = s.CreateSave().Json;
             var c = s.Clock;
             string With(string key, long v) => System.Text.RegularExpressions.Regex.Replace(json, "\"" + key + "\": -?\\d+", "\"" + key + "\": " + v);
-            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(Clock.MaxEstimatedUtcUs))).Ok, Is.True, "가장 늦은 날");
-            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(0))).Ok, Is.True, "가장 이른 날");
-            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(Clock.MaxEstimatedUtcUs))).Ok, Is.True);
-            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(0))).Ok, Is.True);
+            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(Clock.MaxEstimatedUtcUs)), Nonce).Ok, Is.True, "가장 늦은 날");
+            Assert.That(GameSessionLoader.Load(tables, With("processedDay", c.DayIdAt(0)), Nonce).Ok, Is.True, "가장 이른 날");
+            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(Clock.MaxEstimatedUtcUs)), Nonce).Ok, Is.True);
+            Assert.That(GameSessionLoader.Load(tables, With("processedWeek", c.WeekIdAt(0)), Nonce).Ok, Is.True);
             foreach (var (key, v) in new[]
             {
                 ("processedDay", long.MaxValue), ("processedDay", c.DayIdAt(Clock.MaxEstimatedUtcUs) + 1), ("processedDay", c.DayIdAt(0) - 1), ("processedDay", long.MinValue),
                 ("processedWeek", long.MaxValue), ("processedWeek", c.WeekIdAt(Clock.MaxEstimatedUtcUs) + 1), ("processedWeek", c.WeekIdAt(0) - 1),
             })
             {
-                Assert.That(GameSessionLoader.Load(tables, With(key, v)).Ok, Is.False, key + " = " + v);
+                Assert.That(GameSessionLoader.Load(tables, With(key, v), Nonce).Ok, Is.False, key + " = " + v);
             }
             // 서버가 뒤로 보정된 상태(처리한 날 > 지금 추정 날)는 정상이라 불러온다
             s.SyncServerTime(KstMs(2026, 11, 15, 12, 0, 0), 2);
@@ -496,7 +498,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 ("long을 넘는 정수", j => R(j, "\"gold\": 12345", "\"gold\": 99999999999999999999")),
                 ("모르는 saveVersion", j => R(j, "\"saveVersion\": 1", "\"saveVersion\": 2")),
                 ("saveRevision 0", j => R(j, "\"saveRevision\": 1", "\"saveRevision\": 0")),
-                ("빠진 키", j => R(j, "\"progress\": {\"chapter\": 1}, ", "")),
+                ("빠진 키", j => R(j, "\"progress\": {\"chapter\": 1, \"stage\": 1}, ", "")),
                 ("남는 키", j => R(j, "\"saveVersion\": 1", "\"saveVersion\": 1, \"cheat\": true")),
                 ("겹친 키", j => R(j, "\"saveVersion\": 1", "\"saveVersion\": 1, \"saveVersion\": 1")),
                 ("음수 정수 재화", j => R(j, "\"gold\": 12345", "\"gold\": -1")),
@@ -543,11 +545,11 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 틀린_저장은_불러오지_않고_예외도_없다(string why, Func<string, string> make)
         {
             var good = GoodSave(out var tables);
-            Assert.That(GameSessionLoader.Load(tables, good).Ok, Is.True, "고치기 전 저장은 읽힘");
+            Assert.That(GameSessionLoader.Load(tables, good, Nonce).Ok, Is.True, "고치기 전 저장은 읽힘");
             var bad = make(good);
             Assert.That(bad, Is.Not.EqualTo(good), why + ": 실제로 바뀌어야 함");
             SessionLoadResult r = null;
-            Assert.DoesNotThrow(() => r = GameSessionLoader.Load(tables, bad), why);
+            Assert.DoesNotThrow(() => r = GameSessionLoader.Load(tables, bad, Nonce), why);
             Assert.That(r.Ok, Is.False, why);
             Assert.That(r.Session, Is.Null);
             Assert.That(r.Errors, Is.Not.Empty, why);
@@ -562,9 +564,9 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var rngPart = good.Substring(rngStart + 2, good.Length - 1 - (rngStart + 2));
             var reordered = "{" + rngPart + ", " + good.Substring(1, rngStart - 1) + "}";
             Assert.That(reordered, Is.Not.EqualTo(good));
-            var r = GameSessionLoader.Load(tables, reordered);
+            var r = GameSessionLoader.Load(tables, reordered, Nonce);
             Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
-            Assert.That(r.Session.CreateSave().Json, Is.EqualTo(GameSessionLoader.Load(tables, good).Session.CreateSave().Json));
+            Assert.That(r.Session.CreateSave().Json, Is.EqualTo(GameSessionLoader.Load(tables, good, Nonce).Session.CreateSave().Json));
         }
 
         // ---- 위반 검사 ----
@@ -665,7 +667,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 }
             }
             AssertNoViolations(s);
-            var reloaded = GameSessionLoader.Load(TestTableSet(), s.CreateSave().Json, Checked);
+            var reloaded = GameSessionLoader.Load(TestTableSet(), s.CreateSave().Json, Nonce, Checked);
             Assert.That(reloaded.Ok, Is.True, string.Join("\n", reloaded.Errors));
         }
     }

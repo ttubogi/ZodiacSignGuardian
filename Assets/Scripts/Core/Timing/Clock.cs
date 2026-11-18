@@ -131,6 +131,14 @@ namespace ZodiacSignGuardian.Core.Timing
         /// <summary>일일 구간 id가 day인 구간이 시작하는 UTC µs.</summary>
         public long DayStartUtcUs(long day) => day * ClockConfig.UsPerDay + Config.DailyResetHour * ClockConfig.UsPerHour - Config.UtcOffsetMin * ClockConfig.UsPerMin;
 
+        /// <summary>주간 구간 id가 week인 구간이 시작하는 UTC µs (WeekIdAt의 역).</summary>
+        public long WeekStartUtcUs(long week)
+        {
+            // WeekIdAt: week = floor((day + 3 − weekday) / 7) → 그 주의 첫 day = week × 7 − 3 + weekday
+            var day = week * 7 - 3 + Config.WeeklyWeekday;
+            return day * ClockConfig.UsPerDay + Config.WeeklyResetHour * ClockConfig.UsPerHour - Config.UtcOffsetMin * ClockConfig.UsPerMin;
+        }
+
         long LocalUs(long utcUs) => utcUs + Config.UtcOffsetMin * ClockConfig.UsPerMin;
 
         static long FloorDiv(long a, long b)
@@ -147,9 +155,13 @@ namespace ZodiacSignGuardian.Core.Timing
         public ErrorCode? DateGate()
         {
             if (Status != TimeStatus.Valid || EstimatedUtcUs == null) return ErrorCode.TimeNotVerified;
-            var now = EstimatedUtcUs.Value;
-            if (ProcessedDay != null && DayIdAt(now) < ProcessedDay.Value) return ErrorCode.TimeWentBack;
-            if (ProcessedWeek != null && WeekIdAt(now) < ProcessedWeek.Value) return ErrorCode.TimeWentBack;
+            return WentBackAt(EstimatedUtcUs.Value);
+        }
+
+        ErrorCode? WentBackAt(long utcUs)
+        {
+            if (ProcessedDay != null && DayIdAt(utcUs) < ProcessedDay.Value) return ErrorCode.TimeWentBack;
+            if (ProcessedWeek != null && WeekIdAt(utcUs) < ProcessedWeek.Value) return ErrorCode.TimeWentBack;
             return null;
         }
 
@@ -178,7 +190,10 @@ namespace ZodiacSignGuardian.Core.Timing
         /// <summary>
         /// 동기화 응답. 서버 시각은 IsValidServerUtcMs를 통과해야 한다(아니면 예외). 받아들이면 상태가 유효가 되고 구간을 넘긴다.
         /// </summary>
-        public SyncOutcome Sync(long serverUtcMs, long requestId, List<GameEvent> events)
+        public SyncOutcome Sync(long serverUtcMs, long requestId, List<GameEvent> events) => Sync(serverUtcMs, requestId, events, null);
+
+        /// <summary>onDayReset은 DayReset을 낸 직후 불린다(그날의 임무를 비우는 데 씀).</summary>
+        public SyncOutcome Sync(long serverUtcMs, long requestId, List<GameEvent> events, Action onDayReset)
         {
             if (!IsValidServerUtcMs(serverUtcMs)) throw new ArgumentOutOfRangeException(nameof(serverUtcMs), serverUtcMs, "IsValidServerUtcMs를 먼저 확인해야 함");
             if (events == null) throw new ArgumentNullException(nameof(events));
@@ -187,23 +202,86 @@ namespace ZodiacSignGuardian.Core.Timing
             SyncElapsedUs = 0;
             LastAcceptedRequestId = requestId;
             SetStatus(TimeStatus.Valid, events);
-            RollPeriods(events);
+            RollAt(AnchorUtcMs.Value * 1000L, events, onDayReset);
             return SyncOutcome.Accepted;
         }
 
+        /// <summary>경과만 더한다(전투 칸 없음). AdvanceTimeline과 같다.</summary>
+        public void Advance(long elapsedUs, List<GameEvent> events) => AdvanceTimeline(elapsedUs, Array.Empty<long>(), null, null, events);
+
         /// <summary>
-        /// 경과 시간(µs, 자르기 전)을 더한다. CanAdvance를 통과해야 한다(아니면 예외).
-        /// 서버 시각을 한 번도 받지 않았으면(기준 시각 없음) 쌓지 않는다: 기준이 없는 시간은 쓸 데가 없고 첫 동기화 때 어차피 0이 된다.
-        /// 그래서 "기준 시각이 없으면 동기화 누적은 0"이 늘 지켜지고, 저장 검사도 이 조건으로 엄격하게 둔다. (2026-11-17 결정 ①, Codex 검토)
+        /// 한 프레임의 경과를 시간순으로 처리한다 (설계서 v0.9 3절 "Advance 처리 순서", Codex v0.8·v0.9 검토).
+        /// <list type="bullet">
+        /// <item>서버 시각을 한 번도 받지 않았으면(기준 시각 없음) 쌓지 않고, 모든 칸은 TimeNotVerified로 알린다 (2026-11-17 결정 ①).</item>
+        /// <item>처리하는 점: 날짜·주 경계(유효한 동안만), 전투 칸(tickOffsets), 유효 시간 끝. 같은 시각이면 경계 → 칸 → 유효 끝 순서다.
+        ///       그래서 정확히 05:00:00.000000에 채워지는 칸은 초기화 뒤의 새날 칸이고, 유효 시간 끝과 같은 시각의 칸은 아직 유효하다.</item>
+        /// <item>경계는 전투에 인정하지 않은 앞부분에도 있다. 프레임 끝의 상태만 보지 않는다
+        ///       (C2에서는 유효 끝을 먼저 봐서 05시를 유효하게 지난 뒤 유효가 끝나면 하루 초기화가 다음 동기화까지 늦어졌음).</item>
+        /// <item>경계는 유효한 동안(anchor_valid_min ≤ 1440분)에만 찾으므로 한 프레임에 많아야 몇 개다. 경과의 크기만큼 돌지 않는다.</item>
+        /// <item>칸마다 그 시각의 조건(유효 여부, TimeWentBack)을 onTick에 넘긴다. null이면 날짜 의존 진행을 셀 수 있다.</item>
+        /// </list>
+        /// CanAdvance를 통과해야 한다(아니면 예외). tickOffsets는 (0, elapsedUs] 안의 오름차순이어야 한다.
         /// </summary>
-        public void Advance(long elapsedUs, List<GameEvent> events)
+        public void AdvanceTimeline(long elapsedUs, IReadOnlyList<long> tickOffsets, Action<long, ErrorCode?> onTick, Action onDayReset, List<GameEvent> events)
         {
             if (!CanAdvance(elapsedUs)) throw new ArgumentOutOfRangeException(nameof(elapsedUs), elapsedUs, "CanAdvance를 먼저 확인해야 함");
             if (events == null) throw new ArgumentNullException(nameof(events));
-            if (AnchorUtcMs == null) return;
+            if (tickOffsets == null) throw new ArgumentNullException(nameof(tickOffsets));
+            for (var i = 0; i < tickOffsets.Count; i++)
+            {
+                var t = tickOffsets[i];
+                if (t <= 0 || t > elapsedUs || (i > 0 && t < tickOffsets[i - 1])) throw new ArgumentException("칸 시각은 (0, 경과] 안의 오름차순", nameof(tickOffsets));
+            }
+
+            if (AnchorUtcMs == null)
+            {
+                foreach (var t in tickOffsets) onTick?.Invoke(t, ErrorCode.TimeNotVerified);
+                return;
+            }
+
+            var startUs = AnchorUtcMs.Value * 1000L + SyncElapsedUs;
+            var valid = Status == TimeStatus.Valid;
+            // 유효한 마지막 시각(프레임 시작부터). 동기화 누적이 anchor_valid를 "넘으면" 끝나므로 같은 시각까지는 유효하다.
+            var validUntil = valid ? Config.AnchorValidUs - SyncElapsedUs : -1;
+
+            // 처리할 점: (시각, 종류) 종류 0 = 경계, 1 = 칸, 2 = 유효 끝
+            var points = new List<KeyValuePair<long, int>>();
+            if (valid)
+            {
+                var limit = validUntil < elapsedUs ? validUntil : elapsedUs;
+                var at = startUs;
+                while (true)
+                {
+                    var nextDay = DayStartUtcUs(DayIdAt(at) + 1);
+                    var nextWeek = WeekStartUtcUs(WeekIdAt(at) + 1);
+                    var next = nextDay < nextWeek ? nextDay : nextWeek;
+                    if (next - startUs > limit) break;
+                    points.Add(new KeyValuePair<long, int>(next - startUs, 0));
+                    at = next;
+                }
+                if (validUntil < elapsedUs) points.Add(new KeyValuePair<long, int>(validUntil, 2));
+            }
+            foreach (var t in tickOffsets) points.Add(new KeyValuePair<long, int>(t, 1));
+            points.Sort((a, b) => a.Key != b.Key ? a.Key.CompareTo(b.Key) : a.Value.CompareTo(b.Value));
+
+            foreach (var p in points)
+            {
+                var now = startUs + p.Key;
+                switch (p.Value)
+                {
+                    case 0:
+                        RollAt(now, events, onDayReset);
+                        break;
+                    case 1:
+                        onTick?.Invoke(p.Key, valid ? WentBackAt(now) : ErrorCode.TimeNotVerified);
+                        break;
+                    default:
+                        valid = false;
+                        SetStatus(TimeStatus.NeedsResync, events);
+                        break;
+                }
+            }
             SyncElapsedUs += elapsedUs;
-            if (Status == TimeStatus.Valid && SyncElapsedUs > Config.AnchorValidUs) SetStatus(TimeStatus.NeedsResync, events);
-            RollPeriods(events);
         }
 
         /// <summary>복귀·앱 시작: 미확인으로, 최소 허용 번호를 nextRequestId로. nextRequestId는 1 이상(아니면 예외).</summary>
@@ -222,17 +300,18 @@ namespace ZodiacSignGuardian.Core.Timing
             events.Add(new TimeStatusChanged(status));
         }
 
-        void RollPeriods(List<GameEvent> events)
+        /// <summary>추정 시각 utcUs에서 구간을 넘긴다. 유효일 때만 부른다. 처리한 구간보다 뒤일 때만 넘긴다.</summary>
+        void RollAt(long utcUs, List<GameEvent> events, Action onDayReset)
         {
-            if (Status != TimeStatus.Valid || EstimatedUtcUs == null) return;
-            var now = EstimatedUtcUs.Value;
-            var day = DayIdAt(now);
+            if (Status != TimeStatus.Valid) return;
+            var day = DayIdAt(utcUs);
             if (ProcessedDay == null || day > ProcessedDay.Value)
             {
                 events.Add(new DayReset(ProcessedDay, day));
                 ProcessedDay = day;
+                onDayReset?.Invoke();
             }
-            var week = WeekIdAt(now);
+            var week = WeekIdAt(utcUs);
             if (ProcessedWeek == null || week > ProcessedWeek.Value)
             {
                 events.Add(new WeekReset(ProcessedWeek, week));

@@ -391,12 +391,33 @@ namespace ZodiacSignGuardian.Core.Tests.Timing
         public void 재확인_필요_중에는_날을_넘기지_않고_새_응답에서_넘긴다()
         {
             var c = new Clock(Config());
-            Sync(c, KstMs(2026, 11, 16, 4, 50, 0), 1);
-            var e = Advance(c, 20 * ClockConfig.UsPerMin); // 추정 5시 10분이지만 10분 초과
+            Sync(c, KstMs(2026, 11, 16, 4, 49, 0), 1);
+            var e = Advance(c, 20 * ClockConfig.UsPerMin); // 05시는 기준점 뒤 11분: 유효 10분이 끝난 뒤
             Assert.That(e.OfType<DayReset>(), Is.Empty);
             Assert.That(c.Status, Is.EqualTo(TimeStatus.NeedsResync));
-            var e2 = Sync(c, KstMs(2026, 11, 16, 5, 10, 0), 2);
+            var e2 = Sync(c, KstMs(2026, 11, 16, 5, 9, 0), 2);
             Assert.That(e2.OfType<DayReset>().Count(), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void 유효한_동안_05시를_지난_뒤_유효가_끝나도_그_프레임에서_날을_넘긴다()
+        {
+            // C2에서는 프레임 끝에 유효 끝을 먼저 봐서 하루 초기화가 다음 동기화까지 늦어졌음 (Codex v0.8 검토 D5 셋째)
+            var c = new Clock(Config());
+            Sync(c, KstMs(2026, 11, 18, 4, 55, 0), 1); // 수요일 (월요일이면 주 초기화도 함께 나옴)
+            var e = Advance(c, 20 * ClockConfig.UsPerMin); // 05시(5분 뒤) → 유효 끝(10분 뒤) → 프레임 끝(20분 뒤)
+            Assert.That(e.Select(x => x.GetType().Name), Is.EqualTo(new[] { "DayReset", "TimeStatusChanged" }), "경계 → 유효 끝 순서");
+            Assert.That(c.Status, Is.EqualTo(TimeStatus.NeedsResync));
+        }
+
+        [Test]
+        public void 다섯시와_유효_끝이_같은_시각이면_그_순간은_유효하므로_날을_넘긴다()
+        {
+            var c = new Clock(Config());
+            Sync(c, KstMs(2026, 11, 18, 4, 50, 0), 1);
+            var e = Advance(c, 20 * ClockConfig.UsPerMin); // 05시 = 정확히 유효 10분 끝
+            Assert.That(e.Select(x => x.GetType().Name), Is.EqualTo(new[] { "DayReset", "TimeStatusChanged" }));
+            Assert.That(c.Status, Is.EqualTo(TimeStatus.NeedsResync), "그 뒤는 재확인 필요");
         }
 
         [Test]
