@@ -51,12 +51,13 @@ namespace ZodiacSignGuardian.Core.Rewards
     }
 
     /// <summary>
-    /// 오프라인 보상의 정산·미수령 묶음 (설계서 v0.9 3절 "오프라인 보상").
+    /// 오프라인 보상의 정산·미수령 묶음 (설계서 v0.10 3절 "오프라인 보상").
     /// <list type="bullet">
     /// <item>활성 경과(µs)는 정산 기준 시점 뒤의 경과 합(자르기 전)이다. 기준 시각이 없어도 쌓는다.</item>
     /// <item>정산은 정산 대기 중 동기화를 받아들일 때만 한다(부르는 쪽이 판단).</item>
     /// <item>분당 보상이 0이면 정산만 끝내고 미수령 분·묶음을 만들지 않는다(E4).</item>
-    /// <item>묶음이 있으면 분은 1 이상 max_minutes 이하, 금액은 0보다 크다(위반 규칙 4).</item>
+    /// <item>묶음이 있으면 분은 1 이상 max_minutes 이하, 금액은 0보다 크고, 금액 × ad_multiplier도 GameNumber로 표현된다(위반 규칙 4, 허용 범위).
+    /// 만들기·더하기·불러오기에서 같은 조건을 보므로 광고 적용 뒤에도 받을 수 없는 묶음은 생기지 않는다(K7).</item>
     /// </list>
     /// </summary>
     internal sealed class OfflineRewards
@@ -132,16 +133,16 @@ namespace ZodiacSignGuardian.Core.Rewards
             var canHoldBundle = HasBundle || NextBundleId < long.MaxValue;
             if (minutes > 0 && rate.Sign > 0 && canHoldBundle)
             {
+                // 넘침 정책(K6·K7): 후보 합계와 그 배율 값을 먼저 계산하고, 하나라도 넘치면 이 정산분은 더하지 않고 정산만 끝낸다
                 GameNumber added;
                 bool ok;
                 try
                 {
                     added = BundleAmount + rate * minutes;
-                    ok = true;
+                    ok = AmountFits(added);
                 }
                 catch (OverflowException)
                 {
-                    // 지수가 long을 넘는 경우(사실상 없음): 이 정산분은 더하지 않고 정산만 끝낸다
                     added = BundleAmount;
                     ok = false;
                 }
@@ -170,12 +171,27 @@ namespace ZodiacSignGuardian.Core.Rewards
             BundleAdApplied = true;
         }
 
+        /// <summary>묶음 금액으로 허용되는가: 0보다 크고, ad_multiplier배도 GameNumber로 표현된다(넘쳐도 예외를 내지 않음).</summary>
+        public bool AmountFits(GameNumber amount)
+        {
+            if (amount.Sign <= 0) return false;
+            try
+            {
+                var _ = amount * Config.AdMultiplier;
+                return true;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
         /// <summary>받을 수 있는 묶음이 있다(묶음이 있고 금액이 0보다 큼). 배율 계산은 하지 않는다.</summary>
         public bool HasClaimableBundle => HasBundle && BundleAmount.Sign > 0;
 
         /// <summary>
-        /// 받을 금액(광고 적용이면 ad_multiplier배, 아니면 1배). 받을 묶음이 없으면 NotReady,
-        /// 배율을 곱한 값이 GameNumber 범위를 넘으면 InvalidInput(예외를 내지 않음).
+        /// 받을 금액(광고 적용이면 ad_multiplier배, 아니면 1배). 받을 묶음이 없으면 NotReady.
+        /// 허용 범위 때문에 배율 값은 늘 표현되며, 그래도 넘치면 예외 대신 InvalidInput.
         /// </summary>
         public ErrorCode? CheckPayout(out GameNumber payout)
         {
@@ -215,6 +231,7 @@ namespace ZodiacSignGuardian.Core.Rewards
                 if (bundleId < 1 || bundleId >= nextBundleId) { errors.Add("offline.bundle.id: 1 이상 nextBundleId 미만"); ok = false; }
                 if (bundleMinutes < 1 || bundleMinutes > Config.MaxMinutes) { errors.Add("offline.bundle.minutes: 1~" + Config.MaxMinutes); ok = false; }
                 if (bundleAmount.Sign <= 0) { errors.Add("offline.bundle.amount: 0보다 커야 함"); ok = false; }
+                else if (!AmountFits(bundleAmount)) { errors.Add("offline.bundle.amount: ad_multiplier배가 표현 범위를 넘음"); ok = false; }
             }
             if (!ok) return false;
             SettlementPointUtcMs = settlementPointUtcMs;

@@ -69,6 +69,13 @@ namespace ZodiacSignGuardian.Core.Rewards
 
         public AttendanceReward NextReward => _rows[NextDay];
 
+        /// <summary>테스트 전용: 표 읽기가 막는 보상(별 amount 2 등)을 넣어 지급 전 검사를 확인한다.</summary>
+        internal void ReplaceRewardForTest(AttendanceReward reward)
+        {
+            if (!_rows.ContainsKey(reward.Day)) throw new ArgumentException("없는 날: " + reward.Day);
+            _rows[reward.Day] = reward;
+        }
+
         /// <summary>today 구간에 받을 수 있으면 null, 이미 받았으면 AlreadyClaimed.</summary>
         public ErrorCode? CheckClaim(long today) => LastClaimedDay == today ? ErrorCode.AlreadyClaimed : (ErrorCode?)null;
 

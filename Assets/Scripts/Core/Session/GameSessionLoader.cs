@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ZodiacSignGuardian.Core.Economy;
 using ZodiacSignGuardian.Core.Numbers;
 using ZodiacSignGuardian.Core.Randomness;
@@ -149,12 +150,21 @@ namespace ZodiacSignGuardian.Core.Session
             var before = errors.Count;
 
             var currencies = new List<KeyValuePair<string, CurrencyKind>>();
+            var currencyUnreadable = false;
             foreach (var r in tables[Schemas.Currencies].Rows)
             {
                 if (r.Build != CurrentBuild) continue;
-                if (!r.AllValid("currency_id", "number_type")) { errors.Add("currencies: " + r.Line + "번 행을 읽지 못함"); continue; }
+                if (!r.AllValid("currency_id", "number_type")) { errors.Add("currencies: " + r.Line + "번 행을 읽지 못함"); currencyUnreadable = true; continue; }
                 var kind = r.Str("number_type") == "game_number" ? CurrencyKind.GameNumber : CurrencyKind.Integer;
                 currencies.Add(new KeyValuePair<string, CurrencyKind>(r.Str("currency_id"), kind));
+            }
+            // 오프라인 보상을 받는 별가루는 반드시 있어야 하고 GameNumber여야 한다. 없을 때 분당 보상 0으로 숨기지 않는다 (K11, Codex C3 검토).
+            // 읽지 못한 재화 행이 있으면 그 행이 stardust일 수 있으므로 연쇄 문제를 내지 않는다(이미 오류로 남음).
+            if (!currencyUnreadable)
+            {
+                var dust = currencies.Where(c => c.Key == GameSession.StardustId).ToList();
+                if (dust.Count == 0) errors.Add("currencies: 지금 빌드에 " + GameSession.StardustId + "가 없음 (오프라인 보상 재화)");
+                else if (dust.Any(c => c.Value != CurrencyKind.GameNumber)) errors.Add("currencies." + GameSession.StardustId + ": number_type이 game_number가 아님");
             }
 
             var rules = tables[Schemas.ResetRules].Rows;
@@ -232,6 +242,7 @@ namespace ZodiacSignGuardian.Core.Session
                 var rewardId = r.Str("reward_id");
                 if (kind == AttendanceRewardKind.Currency && !p.Wallet.Has(rewardId)) { errors.Add("attendance " + day + "일째: 지금 빌드에 없는 재화 " + rewardId); continue; }
                 if (kind == AttendanceRewardKind.Star && !p.Stars.IsKnown(rewardId)) { errors.Add("attendance " + day + "일째: 지금 빌드에 없는 별 " + rewardId); continue; }
+                if (kind == AttendanceRewardKind.Star && r.Long("amount") != 1) { errors.Add("attendance " + day + "일째: 별 보상의 amount는 1이어야 함 (지금 " + r.Long("amount") + ")"); continue; }
                 attendance.Add(new AttendanceReward((int)day, kind, rewardId, r.Long("amount")));
             }
             if (errors.Count > before) return false;

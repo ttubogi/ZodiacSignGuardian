@@ -3,13 +3,14 @@ using System.Linq;
 using NUnit.Framework;
 using ZodiacSignGuardian.Core.Commands;
 using ZodiacSignGuardian.Core.Rewards;
+using ZodiacSignGuardian.Core.Tests.Data;
 using ZodiacSignGuardian.Core.Timing;
 using static ZodiacSignGuardian.Core.Tests.Session.C3Harness;
 
 namespace ZodiacSignGuardian.Core.Tests.Session
 {
     /// <summary>
-    /// 프레임 안의 경계와 전투 칸 (설계서 v0.9 3절 "Advance 처리 순서", D5, Codex v0.8·v0.9 검토).
+    /// 프레임 안의 경계와 전투 칸 (설계서 v0.10 3절 "Advance 처리 순서", D5, Codex v0.8·v0.9 검토).
     /// 가짜 전투(TestKillsPerTick)로 칸마다 kill_monster를 세어 어느 날로 셌는지 본다.
     /// </summary>
     [TestFixture]
@@ -168,6 +169,87 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             for (var i = 0; i < 3; i++) d.Advance(1.0);
             Assert.That((c.MissionProgress("kill_ten"), d.MissionProgress("kill_ten")), Is.EqualTo((10L, 10L)), "3초 한 번은 전투 1초: 10칸 / 1초 세 번은 30칸이지만 목표 10에서 멈춤");
             Assert.That(c.S.Battle.LastDiscardedUs, Is.EqualTo(2_000_000));
+        }
+
+        [Test]
+        public void 삼초_한_번과_일초_세_번은_목표가_크면_처치_진행이_10_대_30()
+        {
+            // 목표 10인 kill_ten은 양쪽 다 10에서 멈춰 차이를 보이지 못하므로 목표 1000인 임무로 본다 (Codex C3 검토)
+            var tables = Tables(Texts().AppendRow("daily_missions", "kill_many,daily,kill_monster,1000,stardust,1,m1"));
+            C3Harness Make()
+            {
+                var h = New(tables);
+                h.Sync(KstMs(2026, 11, 18, 12, 0, 0));
+                h.S.TestKillsPerTick = 1;
+                return h;
+            }
+            var once = Make();
+            once.Advance(3.0);
+            var thrice = Make();
+            for (var i = 0; i < 3; i++) thrice.Advance(1.0);
+            Assert.That((once.MissionProgress("kill_many"), thrice.MissionProgress("kill_many")), Is.EqualTo((10L, 30L)));
+        }
+
+        // ---- 같은 시각의 겹침과 1µs 이웃 (설계서 v0.10 5절 시나리오, Codex C3 검토) ----
+
+        [Test]
+        public void 날짜_주_경계_유효_끝_전투_칸이_모두_같은_시각이면_초기화_칸_유효끝_순서()
+        {
+            var h = Killing(KstMs(2026, 11, 23, 4, 50, 0)); // 월요일, 유효 끝 = 05:00:00.000000
+            h.S.TestKillsPerTick = 0;
+            h.Advance(599.5);
+            h.S.TestKillsPerTick = 1;
+            var e = h.Advance(1.0); // .6~.9 전날 / 05:00:00.0 = 하루·주 경계 = 칸 = 유효 끝 / 뒤 칸 무효
+            Assert.That(Trace(e), Is.EqualTo("PPPPDWPS"));
+            Assert.That(h.MissionProgress("kill_ten"), Is.EqualTo(1), "정각 칸은 유효한 새날");
+            Assert.That(h.S.TimeStatus, Is.EqualTo(TimeStatus.NeedsResync));
+        }
+
+        [Test]
+        public void 다섯시_1마이크로초_앞에_채워진_칸은_전날()
+        {
+            var h = Killing(KstMs(2026, 11, 18, 4, 59, 58));
+            h.S.TestKillsPerTick = 0;
+            h.Advance(1.099999); // 앞 0.099999초를 버려 칸이 x.x99999에 채워지게 맞춘다
+            h.S.TestKillsPerTick = 1;
+            var e = h.Advance(0.9); // 칸 59.199999 ~ 59.999999
+            Assert.That(Trace(e), Is.EqualTo("PPPPPPPPP"));
+            Assert.That(Trace(h.Advance(0.000002)), Is.EqualTo("D"), "05:00:00.000001까지, 칸 없음");
+            Assert.That(h.MissionProgress("kill_ten"), Is.EqualTo(0), "전날 진행은 초기화로 비워짐");
+        }
+
+        [Test]
+        public void 다섯시_1마이크로초_뒤에_채워진_칸은_새날()
+        {
+            var h = Killing(KstMs(2026, 11, 18, 4, 59, 58));
+            h.S.TestKillsPerTick = 0;
+            h.Advance(1.000001); // 앞 1µs를 버려 칸이 x.x00001에 채워지게 맞춘다
+            h.S.TestKillsPerTick = 1;
+            var e = h.Advance(1.0); // 칸 59.100001 ~ 59.900001 | 05:00 경계 | 05:00:00.000001
+            Assert.That(Trace(e), Is.EqualTo("PPPPPPPPPDP"));
+            Assert.That(h.MissionProgress("kill_ten"), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void 유효_끝_1마이크로초_앞의_칸은_세고_1마이크로초_뒤의_칸은_세지_않는다()
+        {
+            // 앞: 칸이 12:09:59.999999에 채워짐 (유효 끝 12:10:00.000000 전)
+            var before = Killing(KstMs(2026, 11, 18, 12, 0, 0));
+            before.S.TestKillsPerTick = 0;
+            before.Advance(1.099999);
+            before.Advance(597.9); // 12:09:58.999999, 버린 596.9초는 0.1초의 배수라 맞춘 위치가 유지됨
+            before.S.TestKillsPerTick = 1;
+            Assert.That(Trace(before.Advance(1.0)), Is.EqualTo("PPPPPPPPPP"), "59.099999 ~ 59.999999 모두 유효");
+            Assert.That(Trace(before.Advance(0.000002)), Is.EqualTo("S"));
+
+            // 뒤: 칸이 12:10:00.000001에 채워짐
+            var after = Killing(KstMs(2026, 11, 18, 12, 0, 0));
+            after.S.TestKillsPerTick = 0;
+            after.Advance(1.000001);
+            after.Advance(597.9); // 12:09:58.900001
+            after.S.TestKillsPerTick = 1;
+            Assert.That(Trace(after.Advance(1.1)), Is.EqualTo("PPPPPPPPPS"), "59.100001 ~ 59.900001은 유효, 10:00.000001 칸은 무효");
+            Assert.That(after.MissionProgress("kill_ten"), Is.EqualTo(9));
         }
 
         [Test]

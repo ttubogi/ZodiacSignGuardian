@@ -348,7 +348,7 @@ namespace ZodiacSignGuardian.Core.Session
 
         /// <summary>
         /// 출석 받기. 날짜 의존 기능, 같은 일일 구간에 받았으면 AlreadyClaimed. 받기를 누른 날만 차례가 오른다.
-        /// 재화면 CurrencyChanged, 별이면 가진 별 목록에 amount개를 더하고 StarObtained(별 생성과 출석 처리는 함께).
+        /// 재화면 CurrencyChanged, 별이면 가진 별 목록에 하나를 더하고 StarObtained(별 생성과 출석 처리는 함께, 별 amount는 1만).
         /// </summary>
         public CommandResult ClaimAttendance()
         {
@@ -370,12 +370,14 @@ namespace ZodiacSignGuardian.Core.Session
                 }
                 else
                 {
-                    error = Stars.CheckAdd(reward.RewardId, reward.Amount);
+                    // 별 보상은 한 번에 하나(amount 1). 표 검사 4와 표 읽기가 막지만 지급 전에도 본다 (K5)
+                    if (reward.Amount != 1) return ErrorCode.InvalidInput;
+                    error = Stars.CheckAdd(reward.RewardId);
                     if (error != null) return error;
                 }
                 // 여기부터 바꾼다
                 if (change != null) Wallet.Apply(change.Value, CurrencyReason.AttendanceReward, events);
-                else Stars.Add(reward.RewardId, reward.Amount, events);
+                else Stars.Add(reward.RewardId, events);
                 Paid("attendance:" + today);
                 Attendance.MarkClaimed(today);
                 return null;
@@ -491,7 +493,7 @@ namespace ZodiacSignGuardian.Core.Session
             Invariants.CheckCurrencies(balances, _violations);
             Invariants.CheckPeriodsForward(before.Clock.ProcessedDay, before.Clock.ProcessedWeek, Clock.ProcessedDay, Clock.ProcessedWeek, _violations);
             Invariants.CheckSettlementForward(before.Offline.SettlementPointUtcMs, Offline.SettlementPointUtcMs, _violations);
-            Invariants.CheckOfflineBundle(Offline.HasBundle, Offline.BundleMinutes, Offline.BundleAmount, Offline.Config.MaxMinutes, _violations);
+            Invariants.CheckOfflineBundle(Offline.HasBundle, Offline.BundleMinutes, Offline.BundleAmount, Offline.Config.MaxMinutes, Offline.Config.AdMultiplier, _violations);
             Invariants.CheckTickets(before.Ads.States(), Ads.States(), usedFor, _violations);
 
             var accrued = Offline.BundleMinutes > before.Offline.BundleMinutes;

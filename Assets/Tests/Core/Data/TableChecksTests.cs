@@ -68,7 +68,28 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         {
             // 별 id를 재화로, 재화 id를 별로 주면 둘 다 없는 것
             AssertOnly(Run(Good().Replace("attendance", "3,star,wood_1,1", "3,currency,wood_1,1")), TableIssueKind.Check2);
-            AssertOnly(Run(Good().Replace("attendance", "1,currency,gold,50", "1,star,gold,50")), TableIssueKind.Check2);
+            AssertOnly(Run(Good().Replace("attendance", "1,currency,gold,50", "1,star,gold,1")), TableIssueKind.Check2);
+        }
+
+        // ---- 4. 별 보상 amount는 1 (설계서 v0.10, 2026-11-18) ----
+
+        [TestCase("2")]
+        [TestCase("50")]
+        [TestCase("9223372036854775807")]
+        public void 검사4_별_보상의_amount가_1이_아니면_그_행에서_잡는다(string amount)
+        {
+            var issues = Run(Good().Replace("attendance", "3,star,wood_1,1", "3,star,wood_1," + amount));
+            AssertOnly(issues, TableIssueKind.Check4);
+            Assert.That(issues.Single().Column, Is.EqualTo("amount"));
+            Assert.That(issues.Single().Message, Does.Contain("별 보상의 amount는 1"));
+        }
+
+        [Test]
+        public void 검사4_재화_보상의_amount는_1이_아니어도_된다_별_amount를_못_읽으면_연쇄_문제를_내지_않는다()
+        {
+            Assert.That(Run(Good()), Is.Empty, "재화 50·1000은 됨");
+            var issues = Run(Good().Replace("attendance", "3,star,wood_1,1", "3,star,wood_1,x"));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check4), Is.False, TestTables.Describe(issues));
         }
 
         // ---- 3. 양의 정수 ----

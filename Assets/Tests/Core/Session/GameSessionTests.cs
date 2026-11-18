@@ -19,9 +19,20 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         static readonly TimeSpan Kst = TimeSpan.FromHours(9);
         static long KstMs(int y, int mo, int d, int h, int mi, int s) => new DateTimeOffset(y, mo, d, h, mi, s, Kst).ToUnixTimeMilliseconds();
 
+        /// <summary>
+        /// 세션용 표: TestTables.Good()에서 큰 수 재화 dust를 stardust로 바꾼 것.
+        /// 세션은 stardust(game_number)가 없으면 만들어지지 않는다 (설계서 v0.10, K11).
+        /// </summary>
+        internal static Dictionary<string, string> SessionTexts()
+        {
+            return TestTables.Good()
+                .Replace("currencies", "dust,\"별가루, 반짝\",game_number,m1", "stardust,\"별가루, 반짝\",game_number,m1")
+                .Replace("attendance", "2,currency,dust,1000", "2,currency,stardust,1000");
+        }
+
         static TableSet TestTableSet()
         {
-            var r = TableBuilder.BuildFromTexts(TestTables.Good());
+            var r = TableBuilder.BuildFromTexts(SessionTexts());
             Assert.That(r.Ok, Is.True, TestTables.Describe(r.Issues));
             return r.Tables;
         }
@@ -65,9 +76,9 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 새_계정은_지금_빌드의_재화가_0이고_정산_대기_미확인()
         {
             var s = New();
-            Assert.That(s.CurrencyIds, Is.EqualTo(new[] { "gold", "dust" }), "v1 재화(dungeon_key)는 넣지 않음");
+            Assert.That(s.CurrencyIds, Is.EqualTo(new[] { "gold", "stardust" }), "v1 재화(dungeon_key)는 넣지 않음");
             Assert.That(s.Balance("gold"), Is.EqualTo(CurrencyAmount.Of(0L)));
-            Assert.That(s.Balance("dust"), Is.EqualTo(CurrencyAmount.Of(GameNumber.Zero)));
+            Assert.That(s.Balance("stardust"), Is.EqualTo(CurrencyAmount.Of(GameNumber.Zero)));
             Assert.That(s.RunState, Is.EqualTo(RunState.Active));
             Assert.That(s.SettlementPending, Is.True);
             Assert.That(s.TimeStatus, Is.EqualTo(TimeStatus.Unverified));
@@ -88,7 +99,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         // ---- 표 검사를 거치지 않은 표가 와도 예외 대신 오류 (Codex 검토 2026-11-16) ----
 
         /// <summary>검사 없이 읽기만 한 표 묶음 (표 검사가 막아야 할 표를 일부러 만든다).</summary>
-        static TableSet ParsedOnly(Dictionary<string, string> texts)
+        internal static TableSet ParsedOnly(Dictionary<string, string> texts)
         {
             // 칸 형식 문제(범위 밖 등)가 있어도 읽은 표를 그대로 넘긴다. 못 읽은 칸은 비어 있는 것으로 보인다.
             return TableLoader.LoadTexts(texts, new List<TableIssue>());
@@ -101,7 +112,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         [TestCase("daily,daily,5,,,540,5,10,5", "daily,daily,5,,,540,5,3,5", "시계·재화·오프라인 설정이 맞지 않음")]
         public void 세션을_만들_수_없는_표는_예외_없이_오류로_돌려준다(string from, string to, string message)
         {
-            var tables = ParsedOnly(TestTables.Good().Replace("reset_rules", from, to));
+            var tables = ParsedOnly(SessionTexts().Replace("reset_rules", from, to));
             SessionLoadResult made = null, loaded = null;
             Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1, Nonce));
             Assert.That(made.Ok, Is.False);
@@ -110,7 +121,35 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, good, Nonce));
             Assert.That(loaded.Ok, Is.False);
             // 표 검사는 같은 표를 막는다
-            Assert.That(TableBuilder.BuildFromTexts(TestTables.Good().Replace("reset_rules", from, to)).Ok, Is.False);
+            Assert.That(TableBuilder.BuildFromTexts(SessionTexts().Replace("reset_rules", from, to)).Ok, Is.False);
+        }
+
+        // ---- 별가루(stardust)는 반드시 있어야 한다 (설계서 v0.10, Codex C3 검토 K11) ----
+
+        [TestCase("stardust,\"별가루, 반짝\",game_number,m1", "moondust,\"별가루, 반짝\",game_number,m1", "stardust가 없음")]
+        [TestCase("stardust,\"별가루, 반짝\",game_number,m1", "stardust,\"별가루, 반짝\",game_number,v1", "stardust가 없음")]
+        [TestCase("stardust,\"별가루, 반짝\",game_number,m1", "stardust,\"별가루, 반짝\",integer,m1", "game_number가 아님")]
+        public void 별가루가_없거나_다른_빌드에만_있거나_정수형이면_새_계정과_불러오기_모두_오류(string from, string to, string message)
+        {
+            var good = GoodSave(out _);
+            var tables = ParsedOnly(SessionTexts().Replace("currencies", from, to));
+            SessionLoadResult made = null, loaded = null;
+            Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1, Nonce));
+            Assert.That(made.Ok, Is.False);
+            Assert.That(made.Errors.Any(e => e.Contains(message)), Is.True, string.Join("\n", made.Errors));
+            Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, good, Nonce));
+            Assert.That(loaded.Ok, Is.False);
+            Assert.That(loaded.Errors.Any(e => e.Contains(message)), Is.True, string.Join("\n", loaded.Errors));
+        }
+
+        [Test]
+        public void 재화_행을_못_읽으면_별가루_없음을_따로_말하지_않는다()
+        {
+            // 못 읽은 행이 stardust일 수 있으므로 연쇄 문제를 내지 않는다 (배운 점 2026-11-15)
+            var tables = ParsedOnly(SessionTexts().Replace("currencies", "stardust,\"별가루, 반짝\",game_number,m1", "stardust,\"별가루, 반짝\",number,m1"));
+            var made = GameSessionLoader.NewAccount(tables, 1, Nonce);
+            Assert.That(made.Ok, Is.False);
+            Assert.That(made.Errors.Any(e => e.Contains("stardust가 없음") || e.Contains("game_number가 아님")), Is.False, string.Join("\n", made.Errors));
         }
 
         [Test]
@@ -313,7 +352,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         {
             var a = Played(TestTableSet(), 3);
             var json = a.CreateSave().Json;
-            Assert.That(json, Does.Contain("\"dust\": \"1.25e40\""));
+            Assert.That(json, Does.Contain("\"stardust\": \"1.25e40\""));
             Assert.That(json, Does.Contain("\"gold\": 12345"));
             foreach (var token in json.Split(new[] { ' ', ',', ':', '[', ']', '{', '}' }, StringSplitOptions.RemoveEmptyEntries))
             {
@@ -502,10 +541,10 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 ("남는 키", j => R(j, "\"saveVersion\": 1", "\"saveVersion\": 1, \"cheat\": true")),
                 ("겹친 키", j => R(j, "\"saveVersion\": 1", "\"saveVersion\": 1, \"saveVersion\": 1")),
                 ("음수 정수 재화", j => R(j, "\"gold\": 12345", "\"gold\": -1")),
-                ("음수 큰 수 재화", j => R(j, "\"dust\": \"1.25e40\"", "\"dust\": \"-1.25e40\"")),
+                ("음수 큰 수 재화", j => R(j, "\"stardust\": \"1.25e40\"", "\"stardust\": \"-1.25e40\"")),
                 ("정수 재화가 문자열", j => R(j, "\"gold\": 12345", "\"gold\": \"12345\"")),
-                ("큰 수 재화가 숫자", j => R(j, "\"dust\": \"1.25e40\"", "\"dust\": 125")),
-                ("큰 수 형식 오류", j => R(j, "\"dust\": \"1.25e40\"", "\"dust\": \"12.5e39\"")),
+                ("큰 수 재화가 숫자", j => R(j, "\"stardust\": \"1.25e40\"", "\"stardust\": 125")),
+                ("큰 수 형식 오류", j => R(j, "\"stardust\": \"1.25e40\"", "\"stardust\": \"12.5e39\"")),
                 ("표에 없는 재화", j => R(j, "\"gold\": 12345", "\"gold\": 12345, \"dungeon_key\": 1")),
                 ("빠진 재화", j => R(j, "\"gold\": 12345, ", "")),
                 ("rng 11개", j => DropLastRng(j)),

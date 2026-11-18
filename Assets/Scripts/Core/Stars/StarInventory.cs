@@ -50,24 +50,24 @@ namespace ZodiacSignGuardian.Core.Stars
         public IReadOnlyList<OwnedStar> All => _stars;
         public bool IsKnown(string starId) => starId != null && _known.Contains(starId);
 
-        /// <summary>count개를 더할 수 있으면 null. 모르는 별 → InvalidTarget, 번호가 long을 넘으면 InvalidInput.</summary>
-        public ErrorCode? CheckAdd(string starId, long count)
+        /// <summary>
+        /// 별 하나를 더할 수 있으면 null. 모르는 별 → InvalidTarget, 인스턴스 번호가 long 끝이면 InvalidInput.
+        /// 한 번에 하나만 더한다(표 값의 크기만큼 반복하지 않음, 설계서 v0.10 · Codex C3 검토 K5).
+        /// </summary>
+        public ErrorCode? CheckAdd(string starId)
         {
             if (!IsKnown(starId)) return ErrorCode.InvalidTarget;
-            if (count < 1 || NextInstanceId > long.MaxValue - count) return ErrorCode.InvalidInput;
+            if (NextInstanceId == long.MaxValue) return ErrorCode.InvalidInput;
             return null;
         }
 
-        public void Add(string starId, long count, List<GameEvent> events)
+        public void Add(string starId, List<GameEvent> events)
         {
-            if (CheckAdd(starId, count) != null) throw new InvalidOperationException("더할 수 없는 별: " + starId);
-            for (long i = 0; i < count; i++)
-            {
-                var star = new OwnedStar(NextInstanceId, starId);
-                NextInstanceId++;
-                _stars.Add(star);
-                events.Add(new StarObtained(star.InstanceId, starId));
-            }
+            if (CheckAdd(starId) != null) throw new InvalidOperationException("더할 수 없는 별: " + starId);
+            var star = new OwnedStar(NextInstanceId, starId);
+            NextInstanceId++;
+            _stars.Add(star);
+            events.Add(new StarObtained(star.InstanceId, starId));
         }
 
         /// <summary>저장한 값으로. 번호는 1 이상 nextInstanceId 미만이고 겹치지 않으며, 별은 지금 빌드에 있어야 한다.</summary>

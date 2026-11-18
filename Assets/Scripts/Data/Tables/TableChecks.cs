@@ -128,6 +128,7 @@ namespace ZodiacSignGuardian.Data.Tables
 
         // 4. 출석은 1일부터 마지막 날까지 빠짐없이 한 번씩 있다. (겹침은 검사 1)
         //    마지막 날은 reset_rules의 cycle 규칙(출석 주기, 하나뿐)의 cycle_days와 같다. (C1 검토, 2026-11-15)
+        //    별 보상(reward_kind star) 행의 amount는 1이다. (설계서 v0.10, Codex C3 검토 질문 1 A안, 2026-11-18)
         static void Check4_Attendance(TableSet set, List<TableIssue> issues)
         {
             var t = set[Schemas.Attendance];
@@ -136,6 +137,15 @@ namespace ZodiacSignGuardian.Data.Tables
             {
                 Add(issues, TableIssueKind.Check4, name, 0, null, "출석 보상이 하나도 없음");
                 return;
+            }
+            // 별 보상은 한 번에 하나만 준다. 칸 하나만 보는 검사라 다른 칸을 못 읽어도 이 행 안에서 끝난다.
+            foreach (var r in t.Rows)
+            {
+                if (!r.IsValid("reward_kind") || !r.IsValid("amount") || r.Str("reward_kind") != "star") continue;
+                if (r.Long("amount") != 1)
+                {
+                    Add(issues, TableIssueKind.Check4, name, r.Line, "amount", "별 보상의 amount는 1이어야 함 (지금 " + r.Long("amount") + ")");
+                }
             }
             // 읽은 날만 정렬해 이웃한 날 사이의 빈 구간을 찾는다. 일의 양은 날 숫자의 크기가 아니라 행 수에 비례한다.
             // (Codex 검토 2026-11-15: 1부터 마지막 날까지 하나씩 세면 day 하나가 10억이면 10억 번 돌고 메모리가 바닥남)

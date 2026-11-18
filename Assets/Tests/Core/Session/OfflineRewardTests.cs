@@ -355,27 +355,76 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             AssertSaveLoads(h, "버린 뒤");
         }
 
-        [Test]
-        public void 광고_배율을_곱한_값이_범위를_넘으면_수령은_InvalidInput이고_예외도_상태_변화도_없다()
-        {
-            // 분당 1e(끝-1) × 60분 = 6e(끝): 1배는 범위 안, 2배는 범위 밖
-            var big = GameNumber.From(1.0, long.MaxValue - 1);
-            var h = Started();
-            h.S.OfflineRateForStage = _ => big;
-            h.AwayAndBack(T0 + 60 * Min);
-            Assert.That(h.S.OfflineBundle.Amount, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)));
-            Assert.DoesNotThrow(() => h.Ok(h.S.ConfirmAd(h.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline))));
-            Assert.DoesNotThrow(() => h.AssertFailsUnchanged(() => h.S.ClaimOffline(), ErrorCode.InvalidInput));
-            Assert.DoesNotThrow(() => h.AssertFailsUnchanged(() => h.S.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline), ErrorCode.AlreadyClaimed));
-            AssertSaveLoads(h, "광고 적용 큰 묶음");
+        // ---- 넘침 정책 (설계서 v0.10, Codex C3 검토 질문 2 A안: 묶음 금액 × ad_multiplier도 표현 가능) ----
 
-            // 광고 없이 받으면 1배는 받는다
-            var plain = Started();
-            plain.S.OfflineRateForStage = _ => big;
-            plain.AwayAndBack(T0 + 60 * Min);
-            plain.Ok(plain.S.ClaimOffline());
-            Assert.That(plain.Dust, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)));
-            AssertSaveLoads(plain, "큰 잔액");
+        [Test]
+        public void 배율_값이_넘칠_새_묶음은_만들지_않고_정산만_끝낸다_경계의_양쪽()
+        {
+            // ad_multiplier 2. 4.99999999999999e(끝) × 2 = 9.99999999999998e(끝)는 범위 안, 5e(끝) × 2 = 1e(끝+1)은 범위 밖
+            var fits = Started();
+            fits.S.OfflineRateForStage = _ => GameNumber.From(4.99999999999999, long.MaxValue);
+            fits.AwayAndBack(T0 + 1 * Min);
+            Assert.That(fits.S.OfflineBundle.Amount, Is.EqualTo(GameNumber.From(4.99999999999999, long.MaxValue)), "경계 안쪽은 묶음이 생김");
+            fits.Ok(fits.S.ConfirmAd(fits.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline)));
+            fits.Ok(fits.S.ClaimOffline());
+            Assert.That(fits.Dust, Is.EqualTo(GameNumber.From(9.99999999999998, long.MaxValue)), "2배로 받음");
+            AssertSaveLoads(fits, "경계 안쪽 수령 뒤");
+
+            var over = Started();
+            over.S.OfflineRateForStage = _ => GameNumber.From(5.0, long.MaxValue);
+            System.Collections.Generic.List<GameEvent> e = null;
+            Assert.DoesNotThrow(() => e = over.AwayAndBack(T0 + 1 * Min));
+            Assert.That(e.OfType<OfflineRewardReady>(), Is.Empty);
+            Assert.That(over.S.OfflineBundle, Is.Null, "경계 바깥은 묶음을 만들지 않음");
+            Assert.That(over.S.Offline.SettlementPointUtcMs, Is.EqualTo(T0 + 1 * Min), "정산은 끝남");
+            Assert.That(over.S.Offline.NextBundleId, Is.EqualTo(1), "번호를 쓰지 않음");
+            AssertSaveLoads(over, "경계 바깥");
+        }
+
+        [Test]
+        public void 광고_적용_뒤_다음_정산으로_배율_값이_넘치면_그_정산분은_버리고_묶음은_2배로_받는다()
+        {
+            // 분당 1e(끝-1): 30분이면 3e(끝)(2배 6e(끝)는 범위 안), 다시 30분을 더하면 6e(끝)(2배는 범위 밖)
+            var h = Started();
+            h.S.OfflineRateForStage = _ => GameNumber.From(1.0, long.MaxValue - 1);
+            h.AwayAndBack(T0 + 30 * Min);
+            var amount = GameNumber.From(3.0, long.MaxValue);
+            Assert.That(h.S.OfflineBundle.Amount, Is.EqualTo(amount));
+            h.Ok(h.S.ConfirmAd(h.StartAd(ZodiacSignGuardian.Core.Ads.AdTarget.Offline)));
+            var id = h.S.OfflineBundle.Id;
+
+            System.Collections.Generic.List<GameEvent> e = null;
+            Assert.DoesNotThrow(() => e = h.AwayAndBack(T0 + 60 * Min));
+            Assert.That(e.OfType<OfflineRewardReady>(), Is.Empty, "넘치는 정산분은 더하지 않음");
+            var b = h.S.OfflineBundle;
+            Assert.That((b.Id, b.Minutes, b.Amount, b.AdApplied), Is.EqualTo((id, 30L, amount, true)), "묶음과 광고 적용은 그대로");
+            Assert.That(h.S.Offline.SettlementPointUtcMs, Is.EqualTo(T0 + 60 * Min), "정산은 끝남(버린 시간은 다시 계산하지 않음)");
+            Assert.That(h.S.Violations, Is.Empty, string.Join("\n", h.S.Violations));
+            AssertSaveLoads(h, "광고 적용 묶음 + 버린 정산분");
+
+            var r = GameSessionLoader.Load(h.T, h.S.CreateSave().Json, DefaultNonce ^ 4);
+            Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
+            Assert.That(r.Session.OfflineBundle.AdApplied, Is.True, "불러와도 광고 적용 유지");
+
+            h.Ok(h.S.ClaimOffline());
+            Assert.That(h.Dust, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)), "받을 수 없는 묶음이 생기지 않고 2배로 받음");
+        }
+
+        [Test]
+        public void 저장의_묶음_금액에_배율을_곱해_넘치면_불러오기_실패()
+        {
+            var h = Started();
+            h.S.OfflineRateForStage = _ => GameNumber.From(1.0, long.MaxValue - 1);
+            h.AwayAndBack(T0 + 30 * Min);
+            var json = h.S.CreateSave().Json;
+            var good = "\"" + GameNumber.From(3.0, long.MaxValue).ToSaveString() + "\"";
+            Assert.That(json, Does.Contain(good));
+            Assert.That(GameSessionLoader.Load(h.T, json, DefaultNonce ^ 5).Ok, Is.True, "3e(끝)은 됨");
+            var bad = json.Replace(good, "\"" + GameNumber.From(6.0, long.MaxValue).ToSaveString() + "\"");
+            SessionLoadResult r = null;
+            Assert.DoesNotThrow(() => r = GameSessionLoader.Load(h.T, bad, DefaultNonce ^ 5));
+            Assert.That(r.Ok, Is.False);
+            Assert.That(r.Errors.Any(x => x.Contains("ad_multiplier배")), Is.True, string.Join("\n", r.Errors));
         }
 
         [Test]

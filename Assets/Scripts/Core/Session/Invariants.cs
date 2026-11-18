@@ -68,9 +68,17 @@ namespace ZodiacSignGuardian.Core.Session
             if (accrued && !validAfter) found.Add(new InvariantViolation(3, "유효하지 않은 시각에서 오프라인 적립이 생김"));
         }
 
-        /// <summary>규칙 4: 미수령 합계 분은 max_minutes를 넘지 않는다. 묶음이 있으면 분 1 이상, 금액 0보다 큼(E4: 빈 묶음이 남지 않음).</summary>
-        public static void CheckOfflineBundle(bool hasBundle, long minutes, GameNumber amount, int maxMinutes, List<InvariantViolation> found)
+        /// <summary>
+        /// 규칙 4: 미수령 합계 분은 max_minutes를 넘지 않는다. 묶음이 있으면 분 1 이상, 금액 0보다 큼(E4: 빈 묶음이 남지 않음),
+        /// 금액 × ad_multiplier도 표현된다(K7: 광고 적용 뒤 받을 수 없는 묶음이 생기지 않음).
+        /// </summary>
+        public static void CheckOfflineBundle(bool hasBundle, long minutes, GameNumber amount, int maxMinutes, int adMultiplier, List<InvariantViolation> found)
         {
+            if (hasBundle && amount.Sign > 0)
+            {
+                try { var _ = amount * adMultiplier; }
+                catch (System.OverflowException) { found.Add(new InvariantViolation(4, "미수령 금액 " + amount + "의 " + adMultiplier + "배가 표현 범위를 넘음")); }
+            }
             if (minutes > maxMinutes) found.Add(new InvariantViolation(4, "미수령 합계 " + minutes + "분이 " + maxMinutes + "분을 넘음"));
             if (hasBundle && (minutes < 1 || amount.Sign <= 0)) found.Add(new InvariantViolation(4, "빈 미수령 묶음 (분 " + minutes + ", 금액 " + amount + ")"));
             if (!hasBundle && (minutes != 0 || !amount.IsZero)) found.Add(new InvariantViolation(4, "묶음이 없는데 미수령 값이 남음"));

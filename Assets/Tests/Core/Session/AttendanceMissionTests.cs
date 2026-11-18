@@ -8,11 +8,12 @@ using ZodiacSignGuardian.Core.Rewards;
 using ZodiacSignGuardian.Core.Session;
 using ZodiacSignGuardian.Core.Stars;
 using ZodiacSignGuardian.Core.Tests.Data;
+using ZodiacSignGuardian.Data.Tables;
 using static ZodiacSignGuardian.Core.Tests.Session.C3Harness;
 
 namespace ZodiacSignGuardian.Core.Tests.Session
 {
-    /// <summary>출석·가진 별·일일 임무 (설계서 v0.9 3절, 2026-11-17 Q1·Q2·Q4).</summary>
+    /// <summary>출석·가진 별·일일 임무 (설계서 v0.10 3절, 2026-11-17 Q1·Q2·Q4, 2026-11-18 별 보상 amount 1).</summary>
     [TestFixture]
     public class AttendanceMissionTests
     {
@@ -66,26 +67,68 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             h.AssertFailsUnchanged(() => h.S.ClaimAttendance(), ErrorCode.TimeWentBack);
         }
 
-        [Test]
-        public void 별_보상이_여러_개면_인스턴스를_그만큼_번호가_겹치지_않게()
+        // ---- 별 보상 수량 (설계서 v0.10, Codex C3 검토 질문 1 A안: amount 1만) ----
+
+        [TestCase(2L)]
+        [TestCase(long.MaxValue)]
+        public void 별_보상_amount가_1이_아니면_표_검사와_표_읽기가_막는다(long amount)
         {
-            var texts = Texts().Replace("attendance", "1,currency,gold,50", "1,star,fire_2,2");
-            var h = New(Tables(texts));
-            h.Sync(Day(0));
-            var e = h.Ok(h.S.ClaimAttendance());
-            Assert.That(e.OfType<StarObtained>().Select(x => x.InstanceId), Is.EqualTo(new[] { 1L, 2L }));
-            Assert.That(h.S.Stars.NextInstanceId, Is.EqualTo(3));
+            var texts = Texts().Replace("attendance", "1,currency,gold,50", "1,star,fire_2," + amount);
+            Assert.That(TableBuilder.BuildFromTexts(texts).Ok, Is.False, "표 검사 4");
+            var tables = GameSessionTests.ParsedOnly(texts);
+            SessionLoadResult made = null;
+            Assert.DoesNotThrow(() => made = GameSessionLoader.NewAccount(tables, 1, DefaultNonce));
+            Assert.That(made.Ok, Is.False);
+            Assert.That(made.Errors.Any(e => e.Contains("별 보상의 amount는 1")), Is.True, string.Join("\n", made.Errors));
+            var save = Started().S.CreateSave().Json;
+            SessionLoadResult loaded = null;
+            Assert.DoesNotThrow(() => loaded = GameSessionLoader.Load(tables, save, DefaultNonce));
+            Assert.That(loaded.Ok, Is.False);
+        }
+
+        [TestCase(2L)]
+        [TestCase(long.MaxValue)]
+        public void 별_보상_amount가_1이_아니면_지급_전_검사도_InvalidInput이고_별_출석_이벤트_그대로(long amount)
+        {
+            var h = Started();
+            h.S.Attendance.ReplaceRewardForTest(new AttendanceReward(1, AttendanceRewardKind.Star, "fire_2", amount));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            h.AssertFailsUnchanged(() => h.S.ClaimAttendance(), ErrorCode.InvalidInput);
+            Assert.That(sw.ElapsedMilliseconds, Is.LessThan(2000), "값의 크기만큼 돌지 않음");
+            Assert.That(h.S.OwnedStars, Is.Empty);
+            Assert.That(h.S.AttendanceNextDay, Is.EqualTo(1));
+            Assert.That(h.S.AttendanceClaimedToday, Is.False);
         }
 
         [Test]
-        public void 별_번호가_끝에_닿으면_출석도_함께_실패한다()
+        public void 별_보상은_하나씩_번호가_겹치지_않게()
         {
-            var texts = Texts().Replace("attendance", "1,currency,gold,50", "1,star,fire_2,2");
+            var texts = Texts().Replace("attendance", "1,currency,gold,50", "1,star,fire_2,1");
             var h = New(Tables(texts));
             h.Sync(Day(0));
-            Assert.That(h.S.Stars.TryRestore(long.MaxValue - 1, new List<OwnedStar>(), new List<string>()), Is.True);
+            var e = h.Ok(h.S.ClaimAttendance());
+            Assert.That(e.OfType<StarObtained>().Select(x => (x.InstanceId, x.StarId)), Is.EqualTo(new[] { (1L, "fire_2") }));
+            Assert.That(h.S.Stars.NextInstanceId, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void 별_번호가_끝에_닿으면_출석도_함께_실패하고_끝_바로_앞까지는_쓴다()
+        {
+            var texts = Texts().Replace("attendance", "1,currency,gold,50", "1,star,fire_2,1");
+            var h = New(Tables(texts));
+            h.Sync(Day(0));
+            Assert.That(h.S.Stars.TryRestore(long.MaxValue, new List<OwnedStar>(), new List<string>()), Is.True);
             h.AssertFailsUnchanged(() => h.S.ClaimAttendance(), ErrorCode.InvalidInput);
             Assert.That(h.S.AttendanceNextDay, Is.EqualTo(1));
+
+            var h2 = New(Tables(texts));
+            h2.Sync(Day(0));
+            Assert.That(h2.S.Stars.TryRestore(long.MaxValue - 1, new List<OwnedStar>(), new List<string>()), Is.True);
+            var e = h2.Ok(h2.S.ClaimAttendance());
+            Assert.That(e.OfType<StarObtained>().Single().InstanceId, Is.EqualTo(long.MaxValue - 1));
+            Assert.That(h2.S.Stars.NextInstanceId, Is.EqualTo(long.MaxValue));
+            var r = GameSessionLoader.Load(Tables(texts), h2.S.CreateSave().Json, DefaultNonce ^ 3);
+            Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
         }
 
         [Test]

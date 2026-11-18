@@ -163,12 +163,15 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(found.Select(v => v.Rule), Is.EqualTo(new[] { 3, 3, 3 }));
 
             found.Clear();
-            Invariants.CheckOfflineBundle(true, 721, GameNumber.From(1), 720, found);
-            Invariants.CheckOfflineBundle(true, 0, GameNumber.From(1), 720, found);
-            Invariants.CheckOfflineBundle(true, 10, GameNumber.Zero, 720, found);
-            Invariants.CheckOfflineBundle(false, 3, GameNumber.Zero, 720, found);
-            Invariants.CheckOfflineBundle(true, 720, GameNumber.From(1), 720, found); // 정확히 720은 됨
-            Assert.That(found.Select(v => v.Rule), Is.EqualTo(new[] { 4, 4, 4, 4 }));
+            Invariants.CheckOfflineBundle(true, 721, GameNumber.From(1), 720, 2, found);
+            Invariants.CheckOfflineBundle(true, 0, GameNumber.From(1), 720, 2, found);
+            Invariants.CheckOfflineBundle(true, 10, GameNumber.Zero, 720, 2, found);
+            Invariants.CheckOfflineBundle(false, 3, GameNumber.Zero, 720, 2, found);
+            Invariants.CheckOfflineBundle(true, 720, GameNumber.From(1), 720, 2, found); // 정확히 720은 됨
+            Invariants.CheckOfflineBundle(true, 10, GameNumber.From(6.0, long.MaxValue), 720, 2, found); // 2배가 넘침 (K7)
+            Invariants.CheckOfflineBundle(true, 10, GameNumber.From(6.0, long.MaxValue), 720, 1, found); // 1배면 됨
+            Invariants.CheckOfflineBundle(true, 10, GameNumber.From(4.0, long.MaxValue), 720, 2, found); // 2배 = 8e(끝)은 됨
+            Assert.That(found.Select(v => v.Rule), Is.EqualTo(new[] { 4, 4, 4, 4, 4 }));
 
             found.Clear();
             var before = new Dictionary<long, KeyValuePair<AdTarget, AdTicketState>>
