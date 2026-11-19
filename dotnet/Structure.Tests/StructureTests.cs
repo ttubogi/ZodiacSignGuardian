@@ -44,7 +44,7 @@ namespace ZodiacSignGuardian.Structure.Tests
         }
 
         /// <summary>보이지 않는 문자(줄 구분자, BOM, 폭 없는 공백)가 코드 안에 들어가면 Unity·편집기마다 다르게 읽힌다.</summary>
-        internal static readonly char[] HiddenChars = { (char)0x2028, (char)0x2029, (char)0xFEFF, (char)0x200B, (char)0x200C, (char)0x200D, (char)0x00A0 };
+        internal static readonly char[] HiddenChars = { (char)0x2028, (char)0x2029, (char)0xFEFF, (char)0x200B, (char)0x200C, (char)0x200D, (char)0x00A0, (char)0xFFFE, (char)0xFFFF };
 
         internal static List<string> FindHiddenChars(string relativePath, string text)
         {

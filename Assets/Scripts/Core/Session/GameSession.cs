@@ -150,6 +150,12 @@ namespace ZodiacSignGuardian.Core.Session
             Stage = stage;
         }
 
+        /// <summary>테스트용: 별 하나를 얻는다(뽑기 난수 없이). 이미 가지면 아무것도 하지 않는다. 별조각은 주지 않는다.</summary>
+        internal void GainStarForTest(string starId)
+        {
+            if (!Stars.Owns(starId)) Stars.Gain(starId, new List<GameEvent>());
+        }
+
         /// <summary>테스트용: 장을 바꾼다 (진행은 C5). 판 N은 장이 N 이상이면 열린다.</summary>
         internal void SetChapterForTest(int chapter)
         {
