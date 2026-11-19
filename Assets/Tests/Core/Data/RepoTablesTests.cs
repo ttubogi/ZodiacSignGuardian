@@ -10,11 +10,11 @@ namespace ZodiacSignGuardian.Core.Tests.Data
     public class RepoTablesTests
     {
         [Test]
-        public void 저장소의_CSV_12개가_모든_검사를_통과한다()
+        public void 저장소의_CSV_15개가_모든_검사를_통과한다()
         {
             var r = TableBuilder.Build(RepoFiles.CsvBytes());
             TestTables.AssertNone(r.Issues);
-            Assert.That(r.Outputs.Count, Is.EqualTo(12));
+            Assert.That(r.Outputs.Count, Is.EqualTo(15));
         }
 
         [Test]
@@ -64,14 +64,14 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 실제_출석표에서_14일을_빼면_잡는다()
         {
-            TestTables.AssertOnly(RunRepo("attendance", "14,star,fire_1,1\n", ""), TableIssueKind.Check4);
+            TestTables.AssertOnly(RunRepo("attendance", "14,star,fire_2,1\n", ""), TableIssueKind.Check4);
         }
 
         [Test]
         public void 실제_별_표에서_m1_별을_v1로_바꾸면_검사8과_출석의_검사7이_잡는다()
         {
-            // wood_1은 7일째 출석 보상이라 검사 7도 걸린다
-            var issues = RunRepo("stars", "wood_1,wood,나무 별 1,m1", "wood_1,wood,나무 별 1,v1");
+            // wood_2는 7일째 출석 보상이라 검사 7도 걸린다
+            var issues = RunRepo("stars", "wood_2,wood,rare,나무 별 2,m1", "wood_2,wood,rare,나무 별 2,v1");
             TestTables.AssertHas(issues, TableIssueKind.Check8);
             TestTables.AssertHas(issues, TableIssueKind.Check7);
         }

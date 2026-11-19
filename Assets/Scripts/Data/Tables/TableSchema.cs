@@ -28,6 +28,11 @@ namespace ZodiacSignGuardian.Data.Tables
         TimeOfDayEnd,
         /// <summary>m1 또는 v1</summary>
         Build,
+        /// <summary>
+        /// 큰 수(GameNumber)의 저장 형식 "가수e지수"와 같은 글자. 1 이상만 받고, 같은 값은 한 가지로만 쓴다(GameNumberText).
+        /// 값은 글자 그대로 둔다(Data는 Core를 참조하지 않으므로 Core가 GameNumber.TryParseSave로 읽는다).
+        /// </summary>
+        GameNumber,
     }
 
     public sealed class ColumnSpec

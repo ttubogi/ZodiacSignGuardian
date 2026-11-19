@@ -25,7 +25,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
 
         [TestCase("attendance", "2,currency,gold,1")]
         [TestCase("weekday_dungeons", "mon,dungeon_extra,dungeon_key,1")]
-        [TestCase("stars", "fire_9,fire,불,v1\nfire_9,fire,불 둘,v1")]
+        [TestCase("stars", "fire_9,fire,common,불,v1\nfire_9,fire,common,불 둘,v1")]
         [TestCase("currencies", "gold,금화 둘,integer,m1")]
         [TestCase("weekly_challenge", "10,dungeon_key,5")]
         public void 검사1_표마다_키가_겹치면_잡는다(string table, string row)
@@ -200,8 +200,8 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         public void v1_별의_속성을_못_읽어도_m1_개수는_센다()
         {
             var issues = Run(Good()
-                .Replace("stars", "wood_4,wood,wood 4,v1", "wood_4,,wood 4,v1")
-                .Replace("stars", "fire_3,fire,fire 3,m1\n", ""));
+                .Replace("stars", "wood_4,wood,common,wood 4,v1", "wood_4,,common,wood 4,v1")
+                .Replace("stars", "fire_3,fire,legend,fire 3,m1\n", ""));
             // element 칸의 형식 문제도 검사 8로 표시되므로, 개수 문구로 구분한다
             Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check8 && i.Message.StartsWith("m1 별은 속성마다") && i.Message.Contains("fire 2")), Is.True, Describe(issues));
         }
@@ -393,13 +393,13 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 검사8_m1_별이_14종이면_잡는다()
         {
-            AssertOnly(Run(Good().Replace("stars", "water_3,water,water 3,m1", "water_3,water,water 3,v1")), TableIssueKind.Check8);
+            AssertOnly(Run(Good().Replace("stars", "water_3,water,legend,water 3,m1", "water_3,water,legend,water 3,v1")), TableIssueKind.Check8);
         }
 
         [Test]
         public void 검사8_m1_별이_16종이면_잡는다()
         {
-            AssertOnly(Run(Good().Replace("stars", "wood_4,wood,wood 4,v1", "wood_4,wood,wood 4,m1")), TableIssueKind.Check8);
+            AssertOnly(Run(Good().Replace("stars", "wood_4,wood,common,wood 4,v1", "wood_4,wood,common,wood 4,m1")), TableIssueKind.Check8);
         }
 
         [Test]
@@ -587,7 +587,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                 .Replace("weekday_dungeons", "sun,dungeon_sun,dungeon_key,2\n", "")                // 5
                 .AppendRow("timed_events", "night,sun,04:30,05:30,gold")                           // 6
                 .Replace("attendance", "3,star,wood_1,1", "3,star,wood_4,1")                      // 7
-                .Replace("stars", "water_3,water,water 3,m1", "water_3,water,water 3,v1")         // 8
+                .Replace("stars", "water_3,water,legend,water 3,m1", "water_3,water,legend,water 3,v1")         // 8
                 .AppendRow("boards", "1,cassiopeia,3,3,m1")                                        // 9
                 .Replace("reset_rules", "weekly,weekly,5,mon,,540,", "weekly,weekly,5,mon,,600,"); // 10
             var issues = Run(t);

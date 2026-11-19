@@ -197,7 +197,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             TestTables.AssertNone(r.Issues.ToList());
             Assert.That(r.Ok, Is.True);
             Assert.That(r.Tables, Is.Not.Null);
-            Assert.That(r.Tables.Tables.Count(), Is.EqualTo(12));
+            Assert.That(r.Tables.Tables.Count(), Is.EqualTo(15));
         }
 
         [Test]
@@ -342,7 +342,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
     public class TableBuilderTests
     {
         [Test]
-        public void 통과하면_표_12개의_JSON을_낸다()
+        public void 통과하면_표_15개의_JSON을_낸다()
         {
             var r = TableBuilder.BuildFromTexts(TestTables.Good());
             Assert.That(r.Ok, Is.True, TestTables.Describe(r.Issues));

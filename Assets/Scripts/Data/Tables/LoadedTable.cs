@@ -96,7 +96,7 @@ namespace ZodiacSignGuardian.Data.Tables
         }
     }
 
-    /// <summary>표 12개 묶음. 읽지 못한 표는 행이 없는 표로 들어간다.</summary>
+    /// <summary>표 15개 묶음. 읽지 못한 표는 행이 없는 표로 들어간다.</summary>
     public sealed class TableSet
     {
         readonly Dictionary<string, LoadedTable> _tables = new Dictionary<string, LoadedTable>();

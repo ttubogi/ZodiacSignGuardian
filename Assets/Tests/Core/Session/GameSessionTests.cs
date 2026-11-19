@@ -76,7 +76,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         public void 새_계정은_지금_빌드의_재화가_0이고_정산_대기_미확인()
         {
             var s = New();
-            Assert.That(s.CurrencyIds, Is.EqualTo(new[] { "gold", "stardust" }), "v1 재화(dungeon_key)는 넣지 않음");
+            Assert.That(s.CurrencyIds, Is.EqualTo(new[] { "gold", "stardust", "shard" }), "v1 재화(dungeon_key)는 넣지 않음");
             Assert.That(s.Balance("gold"), Is.EqualTo(CurrencyAmount.Of(0L)));
             Assert.That(s.Balance("stardust"), Is.EqualTo(CurrencyAmount.Of(GameNumber.Zero)));
             Assert.That(s.RunState, Is.EqualTo(RunState.Active));

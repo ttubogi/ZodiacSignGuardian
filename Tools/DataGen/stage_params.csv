@@ -1,0 +1,2 @@
+chapters,stages_per_chapter,hp_base,hp_ratio_num,hp_ratio_den,dust_base,dust_ratio_num,dust_ratio_den,offline_kills_per_min,kills_to_clear,clear_time_sec,first_clear_currency,first_clear_amount,boss_hp_mul,boss_time_sec,boss_reward_currency,boss_reward_amount
+3,20,20,1313,1000,2,116,100,12,15,60,galaxy_crystal,300,6,30,galaxy_crystal,2000

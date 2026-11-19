@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    스테이지 표 생성 도구 (Unity 밖). Tools/DataGen/stage_params.csv에서 Tables/csv/stages.csv를 만든다.
+    Core와 Data를 참조하지 않는다: 표를 만드는 쪽과 검사하는 쪽이 같은 실수를 함께 놓치지 않게 (설계서 4절).
+    사용법은 Tools/DataGen/README.md를 본다.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ZodiacSignGuardian.DataGen</AssemblyName>
+    <RootNamespace>ZodiacSignGuardian.DataGen</RootNamespace>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

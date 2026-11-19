@@ -70,6 +70,11 @@ namespace ZodiacSignGuardian.Data.Tables
                     if (raw != Schemas.M1 && raw != Schemas.V1) { error = "build는 m1 또는 v1: '" + raw + "'"; return false; }
                     value = raw;
                     return true;
+
+                case ColumnKind.GameNumber:
+                    if (!GameNumberText.TryParse(raw, out _, out _, out var why)) { error = "'" + raw + "'는 큰 수(" + GameNumberText.FormatHint + ")가 아님: " + why; return false; }
+                    value = raw;
+                    return true;
             }
 
             error = "알 수 없는 열 종류";

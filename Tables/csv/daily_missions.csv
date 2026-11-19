@@ -1,6 +1,6 @@
 mission_id,reset_rule,condition,target_count,reward_currency,reward_amount,build
-kill_monsters,daily,kill_monster,100,galaxy_crystal,20,m1
-upgrade_stats,daily,upgrade_stat,10,stardust,1000,m1
-draw_stars,daily,draw_star,5,galaxy_crystal,20,m1
-claim_offline,daily,claim_offline,1,enhance_stone,5,m1
-clear_boss,daily,clear_boss,1,galaxy_crystal,30,m1
+kill_monsters,daily,kill_monster,300,galaxy_crystal,350,m1
+upgrade_stats,daily,upgrade_stat,10,galaxy_crystal,350,m1
+draw_stars,daily,draw_star,1,galaxy_crystal,350,m1
+claim_offline,daily,claim_offline,1,galaxy_crystal,350,m1
+place_stars,daily,place_star,1,galaxy_crystal,350,m1
