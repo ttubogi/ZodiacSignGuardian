@@ -11,15 +11,21 @@ namespace ZodiacSignGuardian.Core.Session
     /// 저장 JSON 형식 (saveVersion 1). Core가 형식과 읽기·쓰기를 모두 맡고, Services는 받은 문자열을 그대로 보관한다 (결정 기록 2026-11-16).
     /// <code>
     /// {"saveVersion": 1, "saveRevision": 3, "lastSavedUtcMs": 1763251200000 | null,
-    ///  "progress": {"chapter": 1},
+    ///  "progress": {"chapter": 1, "stage": 1},
     ///  "wallet": {"stardust": "1.5e3", "galaxy_crystal": 120, ...},
     ///  "clock": {"anchorUtcMs": … | null, "syncElapsedUs": …, "processedDay": … | null, "processedWeek": … | null, "battlePendingUs": …},
-    ///  "rng": ["16진수 16자리" × 12]}
+    ///  "rng": ["16진수 16자리" × 12],
+    ///  "offline": {"settlementPointUtcMs": … | null, "activeElapsedUs": …, "leaveStage": …, "nextBundleId": …,
+    ///              "bundle": null | {"id": …, "minutes": …, "amount": "가수e지수", "adApplied": 0 | 1}},
+    ///  "attendance": {"nextDay": …, "lastClaimedDay": … | null},
+    ///  "stars": {"nextInstanceId": …, "owned": [{"id": …, "starId": "…"}, …]},
+    ///  "missions": {"임무 id": {"progress": …, "claimed": 0 | 1}, …}}
     /// </code>
     /// <list type="bullet">
     /// <item>숫자는 정수(long)만 쓴다. 소수를 글자로 쓰고 읽지 않는다(AGENTS.md 배운 점 2026-11-16). GameNumber 재화는 "가수e지수" 문자열.</item>
     /// <item>읽을 때는 키 집합이 정확히 맞아야 한다(빠진 키·남는 키는 오류). 키 순서는 따지지 않는다.</item>
-    /// <item>시간 상태·실행 상태·요청 번호·광고 번호·µs 미만 남는 값은 저장하지 않는다(설계서 3절).</item>
+    /// <item>시간 상태·실행 상태·정산 대기·요청 번호·세션 무작위 값·광고 번호·µs 미만 남는 값은 저장하지 않는다(설계서 v0.9 3절).</item>
+    /// <item>참/거짓도 0·1 정수로 쓴다. 출시 전에는 saveVersion 1에 칸을 늘리고 이전 단계의 저장은 읽지 않는다(2026-11-17 Q6).</item>
     /// </list>
     /// </summary>
     internal static class SaveFormat
@@ -37,6 +43,20 @@ namespace ZodiacSignGuardian.Core.Session
             public long? ProcessedWeek;
             public long BattlePendingUs;
             public List<string> Rng = new List<string>();
+            public long Stage;
+            public long? SettlementPointUtcMs;
+            public long ActiveElapsedUs;
+            public long LeaveStage;
+            public long NextBundleId;
+            public long BundleId; // 0 = 없음
+            public long BundleMinutes;
+            public GameNumber BundleAmount;
+            public long BundleAdApplied;
+            public long AttendanceNextDay;
+            public long? AttendanceLastClaimedDay;
+            public long NextStarInstanceId;
+            public List<KeyValuePair<long, string>> Stars = new List<KeyValuePair<long, string>>();
+            public Dictionary<string, KeyValuePair<long, long>> Missions = new Dictionary<string, KeyValuePair<long, long>>(StringComparer.Ordinal);
         }
 
         public static string Write(GameSession s, long revision)
@@ -53,14 +73,42 @@ namespace ZodiacSignGuardian.Core.Session
                 .Add("processedDay", s.Clock.ProcessedDay)
                 .Add("processedWeek", s.Clock.ProcessedWeek)
                 .Add("battlePendingUs", s.Battle.PendingUs);
+            var o = s.Offline;
+            object bundle = null;
+            if (o.HasBundle)
+            {
+                bundle = new MiniJson.Obj().Add("id", o.BundleId).Add("minutes", o.BundleMinutes)
+                    .Add("amount", o.BundleAmount.ToSaveString()).Add("adApplied", o.BundleAdApplied ? 1L : 0L);
+            }
+            var offline = new MiniJson.Obj()
+                .Add("settlementPointUtcMs", o.SettlementPointUtcMs)
+                .Add("activeElapsedUs", o.ActiveElapsedUs)
+                .Add("leaveStage", (long)o.LeaveStage)
+                .Add("nextBundleId", o.NextBundleId)
+                .Add("bundle", bundle);
+            var attendance = new MiniJson.Obj()
+                .Add("nextDay", (long)s.Attendance.NextDay)
+                .Add("lastClaimedDay", s.Attendance.LastClaimedDay);
+            var owned = new List<object>();
+            foreach (var star in s.Stars.All) owned.Add(new MiniJson.Obj().Add("id", star.InstanceId).Add("starId", star.StarId));
+            var stars = new MiniJson.Obj().Add("nextInstanceId", s.Stars.NextInstanceId).Add("owned", owned);
+            var missions = new MiniJson.Obj();
+            foreach (var m in s.Missions.Definitions)
+            {
+                missions.Add(m.Id, new MiniJson.Obj().Add("progress", s.Missions.ProgressOf(m.Id)).Add("claimed", s.Missions.IsClaimed(m.Id) ? 1L : 0L));
+            }
             var root = new MiniJson.Obj()
                 .Add("saveVersion", (long)GameSession.SaveVersion)
                 .Add("saveRevision", revision)
                 .Add("lastSavedUtcMs", s.EstimatedUtcMs)
-                .Add("progress", new MiniJson.Obj().Add("chapter", (long)s.Chapter))
+                .Add("progress", new MiniJson.Obj().Add("chapter", (long)s.Chapter).Add("stage", (long)s.Stage))
                 .Add("wallet", wallet)
                 .Add("clock", clock)
-                .Add("rng", new List<object>(s.Rng.ToSaveStrings()));
+                .Add("rng", new List<object>(s.Rng.ToSaveStrings()))
+                .Add("offline", offline)
+                .Add("attendance", attendance)
+                .Add("stars", stars)
+                .Add("missions", missions);
             var sb = new StringBuilder();
             MiniJson.WriteValue(sb, Box(root));
             return sb.ToString();
@@ -84,8 +132,14 @@ namespace ZodiacSignGuardian.Core.Session
             }
         }
 
-        static readonly string[] RootKeys = { "saveVersion", "saveRevision", "lastSavedUtcMs", "progress", "wallet", "clock", "rng" };
-        static readonly string[] ProgressKeys = { "chapter" };
+        static readonly string[] RootKeys = { "saveVersion", "saveRevision", "lastSavedUtcMs", "progress", "wallet", "clock", "rng", "offline", "attendance", "stars", "missions" };
+        static readonly string[] ProgressKeys = { "chapter", "stage" };
+        static readonly string[] OfflineKeys = { "settlementPointUtcMs", "activeElapsedUs", "leaveStage", "nextBundleId", "bundle" };
+        static readonly string[] BundleKeys = { "id", "minutes", "amount", "adApplied" };
+        static readonly string[] AttendanceKeys = { "nextDay", "lastClaimedDay" };
+        static readonly string[] StarsKeys = { "nextInstanceId", "owned" };
+        static readonly string[] OwnedKeys = { "id", "starId" };
+        static readonly string[] MissionKeys = { "progress", "claimed" };
         static readonly string[] ClockKeys = { "anchorUtcMs", "syncElapsedUs", "processedDay", "processedWeek", "battlePendingUs" };
 
         /// <summary>구조와 값 종류만 읽는다. 값이 맞는지(음수, 범위, 표와 같은지)는 불러오는 쪽이 각 모듈의 TryRestore로 본다.</summary>
@@ -115,6 +169,7 @@ namespace ZodiacSignGuardian.Core.Session
 
             if (!Child(root, "progress", out var progress, out error) || !Keys(progress, ProgressKeys, "progress", out error)) return false;
             if (!Long(progress, "chapter", out d.Chapter, out error)) return false;
+            if (!Long(progress, "stage", out d.Stage, out error)) return false;
 
             if (!Child(root, "wallet", out var wallet, out error)) return false;
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -138,6 +193,54 @@ namespace ZodiacSignGuardian.Core.Session
             {
                 if (!(x is string str)) { error = "rng 값은 문자열이어야 함"; return false; }
                 d.Rng.Add(str);
+            }
+
+            if (!Child(root, "offline", out var offline, out error) || !Keys(offline, OfflineKeys, "offline", out error)) return false;
+            if (!NullableLong(offline, "settlementPointUtcMs", out d.SettlementPointUtcMs, out error)) return false;
+            if (!Long(offline, "activeElapsedUs", out d.ActiveElapsedUs, out error)) return false;
+            if (!Long(offline, "leaveStage", out d.LeaveStage, out error)) return false;
+            if (!Long(offline, "nextBundleId", out d.NextBundleId, out error)) return false;
+            offline.TryGet("bundle", out var bundleRaw);
+            if (bundleRaw != null)
+            {
+                if (!(bundleRaw is MiniJson.Obj bundle)) { error = "offline.bundle는 객체 또는 null이어야 함"; return false; }
+                if (!Keys(bundle, BundleKeys, "offline.bundle", out error)) return false;
+                if (!Long(bundle, "id", out d.BundleId, out error)) return false;
+                if (d.BundleId == 0) { error = "offline.bundle.id는 0이 아니어야 함 (없으면 null)"; return false; }
+                if (!Long(bundle, "minutes", out d.BundleMinutes, out error)) return false;
+                bundle.TryGet("amount", out var amountRaw);
+                if (!(amountRaw is string amountText) || !GameNumber.TryParseSave(amountText, out d.BundleAmount)) { error = "offline.bundle.amount는 GameNumber 문자열이어야 함"; return false; }
+                if (!Long(bundle, "adApplied", out d.BundleAdApplied, out error)) return false;
+                if (d.BundleAdApplied != 0 && d.BundleAdApplied != 1) { error = "offline.bundle.adApplied는 0 또는 1"; return false; }
+            }
+
+            if (!Child(root, "attendance", out var attendance, out error) || !Keys(attendance, AttendanceKeys, "attendance", out error)) return false;
+            if (!Long(attendance, "nextDay", out d.AttendanceNextDay, out error)) return false;
+            if (!NullableLong(attendance, "lastClaimedDay", out d.AttendanceLastClaimedDay, out error)) return false;
+
+            if (!Child(root, "stars", out var stars, out error) || !Keys(stars, StarsKeys, "stars", out error)) return false;
+            if (!Long(stars, "nextInstanceId", out d.NextStarInstanceId, out error)) return false;
+            stars.TryGet("owned", out var ownedRaw);
+            if (!(ownedRaw is List<object> ownedList)) { error = "stars.owned는 배열이어야 함"; return false; }
+            foreach (var x in ownedList)
+            {
+                if (!(x is MiniJson.Obj star) || !Keys(star, OwnedKeys, "stars.owned", out error)) { error = error ?? "stars.owned 값은 객체여야 함"; return false; }
+                if (!Long(star, "id", out var id, out error)) return false;
+                star.TryGet("starId", out var starId);
+                if (!(starId is string starIdText)) { error = "stars.owned.starId는 문자열이어야 함"; return false; }
+                d.Stars.Add(new KeyValuePair<long, string>(id, starIdText));
+            }
+
+            if (!Child(root, "missions", out var missions, out error)) return false;
+            var missionSeen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in missions.Members)
+            {
+                if (!missionSeen.Add(m.Key)) { error = "missions 키가 겹침: " + m.Key; return false; }
+                if (!(m.Value is MiniJson.Obj mission) || !Keys(mission, MissionKeys, "missions." + m.Key, out error)) { error = error ?? "missions." + m.Key + "는 객체여야 함"; return false; }
+                if (!Long(mission, "progress", out var progressValue, out error)) return false;
+                if (!Long(mission, "claimed", out var claimed, out error)) return false;
+                if (claimed != 0 && claimed != 1) { error = "missions." + m.Key + ".claimed는 0 또는 1"; return false; }
+                d.Missions[m.Key] = new KeyValuePair<long, long>(progressValue, claimed);
             }
             data = d;
             return true;

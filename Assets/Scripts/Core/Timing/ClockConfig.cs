@@ -33,15 +33,17 @@ namespace ZodiacSignGuardian.Core.Timing
         public ClockConfig(int utcOffsetMin, int dailyResetHour, int weeklyResetHour, int weeklyWeekday,
             int syncIntervalMin, int anchorValidMin, int maxRttSec, int maxFrameSec)
         {
-            if (utcOffsetMin < -24 * 60 || utcOffsetMin > 24 * 60) throw new ArgumentOutOfRangeException(nameof(utcOffsetMin), utcOffsetMin, "UTC 차이는 ±1440분 안");
+            // 범위는 표 검사 10과 같다 (2026-11-17 결정). 받는 쪽도 범위를 본다(AGENTS.md 배운 점 2026-11-17).
+            // 특히 anchor_valid_min ≤ 1440이어야 한 프레임 안에서 처리할 날짜 경계가 몇 개로 한정된다 (Clock.AdvanceTimeline).
+            if (utcOffsetMin < -720 || utcOffsetMin > 840) throw new ArgumentOutOfRangeException(nameof(utcOffsetMin), utcOffsetMin, "−720~840");
             if (dailyResetHour < 0 || dailyResetHour > 23) throw new ArgumentOutOfRangeException(nameof(dailyResetHour), dailyResetHour, "0~23");
             if (weeklyResetHour < 0 || weeklyResetHour > 23) throw new ArgumentOutOfRangeException(nameof(weeklyResetHour), weeklyResetHour, "0~23");
             if (weeklyWeekday < 0 || weeklyWeekday > 6) throw new ArgumentOutOfRangeException(nameof(weeklyWeekday), weeklyWeekday, "월 0 ~ 일 6");
-            if (syncIntervalMin <= 0) throw new ArgumentOutOfRangeException(nameof(syncIntervalMin), syncIntervalMin, "양수");
-            if (anchorValidMin <= 0) throw new ArgumentOutOfRangeException(nameof(anchorValidMin), anchorValidMin, "양수");
+            if (syncIntervalMin < 1 || syncIntervalMin > 60) throw new ArgumentOutOfRangeException(nameof(syncIntervalMin), syncIntervalMin, "1~60");
+            if (anchorValidMin < 1 || anchorValidMin > 1440) throw new ArgumentOutOfRangeException(nameof(anchorValidMin), anchorValidMin, "1~1440");
             if (anchorValidMin <= syncIntervalMin) throw new ArgumentOutOfRangeException(nameof(anchorValidMin), anchorValidMin, "sync_interval_min보다 커야 함 (검사 10과 같은 규칙)");
-            if (maxRttSec <= 0) throw new ArgumentOutOfRangeException(nameof(maxRttSec), maxRttSec, "양수");
-            if (maxFrameSec <= 0) throw new ArgumentOutOfRangeException(nameof(maxFrameSec), maxFrameSec, "양수");
+            if (maxRttSec < 1 || maxRttSec > 60) throw new ArgumentOutOfRangeException(nameof(maxRttSec), maxRttSec, "1~60");
+            if (maxFrameSec < 1 || maxFrameSec > 60) throw new ArgumentOutOfRangeException(nameof(maxFrameSec), maxFrameSec, "1~60");
             UtcOffsetMin = utcOffsetMin;
             DailyResetHour = dailyResetHour;
             WeeklyResetHour = weeklyResetHour;
