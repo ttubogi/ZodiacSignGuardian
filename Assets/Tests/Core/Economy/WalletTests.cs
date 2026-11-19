@@ -184,6 +184,7 @@ namespace ZodiacSignGuardian.Core.Tests.Economy
             {
                 ["Hunt"] = 1, ["BossReward"] = 2, ["MissionReward"] = 3, ["AttendanceReward"] = 4,
                 ["OfflineReward"] = 5, ["StatUpgrade"] = 6, ["StarDraw"] = 7, ["StaffEnhance"] = 8,
+                ["StarDuplicate"] = 9, ["StarGradeUp"] = 10, ["SkillLevelUp"] = 11,
             };
             var actual = Enum.GetValues(typeof(CurrencyReason)).Cast<CurrencyReason>().ToDictionary(e => e.ToString(), e => (int)e);
             Assert.That(actual, Is.EquivalentTo(expected), "번호를 바꾸거나 다시 쓰지 않는다. 새 이유는 끝에 새 번호로");

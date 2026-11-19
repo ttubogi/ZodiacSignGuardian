@@ -188,15 +188,17 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         }
 
         [Test]
-        public void 실제_게임은_스테이지_표가_없어_분당_보상_0()
+        public void 실제_게임은_스테이지_표의_분당_보상을_쓴다()
         {
             var r = GameSessionLoader.NewAccount(Tables(), 1, DefaultNonce);
-            var s = r.Session; // OfflineRateForStage를 넣지 않음 (C4 전)
+            var s = r.Session; // OfflineRateForStage를 넣지 않음 → stages.csv (C4)
             s.SyncServerTime(T0, 1);
             s.Suspend();
             s.Resume(2);
             s.SyncServerTime(T0 + 300 * Min, 2);
-            Assert.That(s.OfflineBundle, Is.Null);
+            Assert.That(s.OfflineBundle, Is.Not.Null);
+            // 1스테이지 offline_dust_per_min 2.4e1 × 300분
+            Assert.That(s.OfflineBundle.Amount.ToSaveString(), Is.EqualTo("7.2e3"));
         }
 
         [Test]

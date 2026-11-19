@@ -23,5 +23,11 @@ namespace ZodiacSignGuardian.Core.Economy
         StarDraw = 7,
         /// <summary>지팡이 강화 비용</summary>
         StaffEnhance = 8,
+        /// <summary>가진 별을 다시 얻어 받은 별조각 (뽑기·출석, C4)</summary>
+        StarDuplicate = 9,
+        /// <summary>별 등급 올리기 비용 (C4)</summary>
+        StarGradeUp = 10,
+        /// <summary>별 스킬 레벨 올리기 비용 (C4)</summary>
+        SkillLevelUp = 11,
     }
 }

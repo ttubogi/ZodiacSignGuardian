@@ -51,7 +51,8 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             h.Pause();
             h.Resume();
             AssertRoundTrip(h, "정산 대기");
-            h.S.SetStageForTest(int.MaxValue);
+            // C4부터 스테이지는 스테이지 표에 있어야 불러올 수 있다 (표 밖은 C4SaveTests)
+            h.S.SetStageForTest(h.S.StageCount);
             AssertRoundTrip(h, "스테이지 끝값");
         }
 
