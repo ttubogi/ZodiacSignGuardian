@@ -402,12 +402,20 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(h.S.Violations, Is.Empty, string.Join("\n", h.S.Violations));
             AssertSaveLoads(h, "광고 적용 묶음 + 버린 정산분");
 
+            // 저장 → 불러오기 → 동기화 → 수령까지 한 경로로 확인한다 (Codex C3 재검토 권고, 2026-11-19)
             var r = GameSessionLoader.Load(h.T, h.S.CreateSave().Json, DefaultNonce ^ 4);
             Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
-            Assert.That(r.Session.OfflineBundle.AdApplied, Is.True, "불러와도 광고 적용 유지");
-
-            h.Ok(h.S.ClaimOffline());
-            Assert.That(h.Dust, Is.EqualTo(GameNumber.From(6.0, long.MaxValue)), "받을 수 없는 묶음이 생기지 않고 2배로 받음");
+            var loaded = r.Session;
+            loaded.OfflineRateForStage = h.S.OfflineRateForStage;
+            Assert.That(loaded.SyncServerTime(T0 + 60 * Min, 1).Ok, Is.True, "불러온 뒤 첫 동기화(새로 정산할 시간 없음)");
+            var lb = loaded.OfflineBundle;
+            Assert.That((lb.Id, lb.Minutes, lb.Amount, lb.AdApplied), Is.EqualTo((id, 30L, amount, true)), "불러와도 묶음과 광고 적용 유지");
+            var claim = loaded.ClaimOffline();
+            Assert.That(claim.Ok, Is.True, claim.Error?.ToString());
+            Assert.That(loaded.Wallet.Balance(GameSession.StardustId).ToString(), Is.EqualTo(GameNumber.From(6.0, long.MaxValue).ToString()),
+                "불러온 세션에서 받을 수 없는 묶음이 생기지 않고 2배로 받음");
+            Assert.That(loaded.OfflineBundle, Is.Null);
+            Assert.That(loaded.Violations, Is.Empty, string.Join("\n", loaded.Violations));
         }
 
         [Test]
