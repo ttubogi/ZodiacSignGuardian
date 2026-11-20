@@ -245,7 +245,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var ids = new[] { "wood_3", "fire_3", "earth_3", "water_3", "metal_3", "wood_1" }.Select(id => Own(h, id)).ToArray();
             h.Ok(h.S.PlaceStar(2, 2, ids[0]));
             h.Ok(h.S.AutoArrange(1));
-            Assert.That(Slots(h, 1), Does.Not.Contain(ids[0]));
+            Assert.That(Slots(h, 1), Has.No.Member(ids[0]));
             Assert.That(Slots(h, 2)[1], Is.EqualTo(ids[0]));
         }
 

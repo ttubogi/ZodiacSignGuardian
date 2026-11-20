@@ -172,7 +172,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Own(h, "wood_1");
             h.S.Stars.CorruptForTest(new OwnedStar(99, "wood_1"));
             h.S.Advance(0.01);
-            Assert.That(h.S.Violations.Select(v => v.Rule), Does.Contain(5));
+            Assert.That(h.S.Violations.Select(v => v.Rule), Has.Member(5));
         }
 
         [Test]
@@ -190,7 +190,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 var id = Own(h, "metal_1");
                 corrupt(h, id);
                 h.S.Advance(0.01);
-                Assert.That(h.S.Violations.Select(v => v.Rule), Does.Contain(5), why);
+                Assert.That(h.S.Violations.Select(v => v.Rule), Has.Member(5), why);
             }
         }
 
@@ -200,7 +200,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             var h = New();
             h.S.Stars.CorruptForTest(new OwnedStar(50, "water_3", 6, 1));
             h.S.Advance(0.01);
-            Assert.That(h.S.Violations.Select(v => v.Rule), Does.Contain(5));
+            Assert.That(h.S.Violations.Select(v => v.Rule), Has.Member(5));
         }
 
         [Test]
@@ -213,8 +213,8 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             // 선 계산 없이 칸만 바꿈: 쇠는 나무와 상생이 아니므로 켜진 선은 없어야 하는데 목록은 그대로(비어 있음) → 바꿔 칸 2에 나무를 넣으면 선이 켜져야 함
             h.S.Boards.CorruptSlotForTest(1, 2, Own(h, "wood_2"));
             h.S.Advance(0.01);
-            Assert.That(h.S.Violations.Select(v => v.Rule), Does.Contain(6));
-            Assert.That(h.S.Violations.Select(v => v.Rule), Does.Not.Contain(5));
+            Assert.That(h.S.Violations.Select(v => v.Rule), Has.Member(6));
+            Assert.That(h.S.Violations.Select(v => v.Rule), Has.No.Member(5));
         }
 
         [Test]

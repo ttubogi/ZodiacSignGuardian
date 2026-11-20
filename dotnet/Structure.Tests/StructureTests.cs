@@ -100,6 +100,38 @@ namespace ZodiacSignGuardian.Structure.Tests
             Assert.That(found, Is.Empty, "정수로 읽고 나누어 만들 것 (GameNumber.TryParseSave 참고)");
         }
 
+        /// <summary>
+        /// Unity Test Framework의 NUnit은 Does.Not.Contain이 문자열만 받는다(dotnet의 NUnit 3.14는 모음도 받아 dotnet에서는 통과함).
+        /// 모음에는 Has.No.Member를 쓴다. (2026-11-20 Unity 컴파일 오류로 찾음)
+        /// </summary>
+        internal static List<string> FindNonStringNotContain(string relativePath, string text)
+        {
+            var found = new List<string>();
+            var lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var at = lines[i].IndexOf("Does.Not.Contain(");
+                while (at >= 0)
+                {
+                    var next = at + "Does.Not.Contain(".Length;
+                    if (next >= lines[i].Length || lines[i][next] != '"') found.Add($"{relativePath}:{i + 1}");
+                    at = lines[i].IndexOf("Does.Not.Contain(", next);
+                }
+            }
+            return found;
+        }
+
+        [Test]
+        public void 테스트는_Unity_NUnit에_없는_Does_Not_Contain_모음_형태를_쓰지_않는다()
+        {
+            var found = new List<string>();
+            foreach (var path in Directory.GetFiles(Path.Combine(RepoPaths.Root, "Assets/Tests"), "*.cs", SearchOption.AllDirectories))
+            {
+                found.AddRange(FindNonStringNotContain(RepoPaths.Relative(path), File.ReadAllText(path)));
+            }
+            Assert.That(found, Is.Empty, "모음에는 Has.No.Member를 쓸 것 (글자 상수만 Does.Not.Contain)");
+        }
+
         [Test]
         public void 코드와_문서와_표에_보이지_않는_문자가_없다()
         {
@@ -329,6 +361,13 @@ namespace ZodiacSignGuardian.Structure.Tests
             var text = "var a = 1;\nif (double.TryParse(s, out var d)) {}\nvar f = Convert.ToDouble(x);\n";
             var found = StructureTests.FindFloatTextReads("X.cs", text);
             Assert.That(found, Is.EqualTo(new[] { "X.cs:2 double.TryParse", "X.cs:3 Convert.ToDouble" }));
+        }
+
+        [Test]
+        public void 모음에_Does_Not_Contain을_쓰면_줄_번호와_함께_잡는다()
+        {
+            var text = "Assert.That(s, Does.Not.Contain(\"x\"));\nAssert.That(list, Does.Not.Contain(5));\nAssert.That(a, Does.Not.Contain(id));\n";
+            Assert.That(StructureTests.FindNonStringNotContain("X.cs", text), Is.EqualTo(new[] { "X.cs:2", "X.cs:3" }));
         }
 
         [Test]
