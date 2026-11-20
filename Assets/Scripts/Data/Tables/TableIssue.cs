@@ -1,8 +1,8 @@
 namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
-    /// 표 검사에서 걸린 문제의 종류. Check1~Check10은 설계서 v0.7 2절 '검사' 목록의 번호와 같다.
-    /// Format은 그 열 개 밖의 형식 문제(파일 없음, 머리줄, 값 모양, 행 수 등)다.
+    /// 표 검사에서 걸린 문제의 종류. Check1~Check12는 설계서 2절 '검사' 목록의 번호와 같다.
+    /// Format은 그 밖의 형식 문제(파일 없음, 머리줄, 값 모양, 행 수 등)다.
     /// </summary>
     public enum TableIssueKind
     {
@@ -21,12 +21,16 @@ namespace ZodiacSignGuardian.Data.Tables
         Check6 = 6,
         /// <summary>7. m1 행은 m1에 없는 것을 가리키지 않는다.</summary>
         Check7 = 7,
-        /// <summary>8. 별 속성은 다섯 가지 중 하나이고, m1에는 속성마다 3종씩 15종이 있다.</summary>
+        /// <summary>8. 별 속성은 다섯 가지 중 하나이고, 희귀도는 일반·희귀·영웅·전설 중 하나이며, m1에서 속성 × 희귀도 칸마다 별 수가 모두 같고 1 이상이다.</summary>
         Check8 = 8,
         /// <summary>9. 판마다 칸 1~5가 모두 이어져 있고, 같은 선의 중복·자기 연결이 없다.</summary>
         Check9 = 9,
         /// <summary>10. reset_rules의 utc_offset_min과 시계 설정 열은 모든 행에서 같은 값이다.</summary>
         Check10 = 10,
+        /// <summary>11. 스테이지: 번호·장·장 안 번호가 빠짐없이 이어지고, 보스 칸은 장 마지막 행에만, 체력·보상은 줄지 않고, m1 장마다 m1 판이 있다.</summary>
+        Check11 = 11,
+        /// <summary>12. 뽑기: 희귀도 확률 합이 10000, 확률이 있는 희귀도는 m1 별이 있음, 뽑기·별조각 재화는 서로 다른 정수 재화.</summary>
+        Check12 = 12,
     }
 
     /// <summary>표를 어디서 읽었는가. 문제 위치를 표시할 때 쓴다.</summary>

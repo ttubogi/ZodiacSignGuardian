@@ -18,7 +18,9 @@ namespace ZodiacSignGuardian.Core.Session
     ///  "offline": {"settlementPointUtcMs": … | null, "activeElapsedUs": …, "leaveStage": …, "nextBundleId": …,
     ///              "bundle": null | {"id": …, "minutes": …, "amount": "가수e지수", "adApplied": 0 | 1}},
     ///  "attendance": {"nextDay": …, "lastClaimedDay": … | null},
-    ///  "stars": {"nextInstanceId": …, "owned": [{"id": …, "starId": "…"}, …]},
+    ///  "stars": {"nextInstanceId": …, "owned": [{"id": …, "starId": "…", "grade": 1~5, "skillLevel": …}, …]},
+    ///  "boards": {"장": [칸 1~5의 별 인스턴스 번호, 빈 칸 0], …},
+    ///  "freeDraw": {"day": 일일 구간 | null, "used": …},
     ///  "missions": {"임무 id": {"progress": …, "claimed": 0 | 1}, …}}
     /// </code>
     /// <list type="bullet">
@@ -55,8 +57,19 @@ namespace ZodiacSignGuardian.Core.Session
             public long AttendanceNextDay;
             public long? AttendanceLastClaimedDay;
             public long NextStarInstanceId;
-            public List<KeyValuePair<long, string>> Stars = new List<KeyValuePair<long, string>>();
+            public List<SavedStar> Stars = new List<SavedStar>();
+            public Dictionary<long, long[]> Boards = new Dictionary<long, long[]>();
+            public long? FreeDrawDay;
+            public long FreeDrawUsed;
             public Dictionary<string, KeyValuePair<long, long>> Missions = new Dictionary<string, KeyValuePair<long, long>>(StringComparer.Ordinal);
+        }
+
+        internal struct SavedStar
+        {
+            public long Id;
+            public string StarId;
+            public long Grade;
+            public long SkillLevel;
         }
 
         public static string Write(GameSession s, long revision)
@@ -90,8 +103,19 @@ namespace ZodiacSignGuardian.Core.Session
                 .Add("nextDay", (long)s.Attendance.NextDay)
                 .Add("lastClaimedDay", s.Attendance.LastClaimedDay);
             var owned = new List<object>();
-            foreach (var star in s.Stars.All) owned.Add(new MiniJson.Obj().Add("id", star.InstanceId).Add("starId", star.StarId));
+            foreach (var star in s.Stars.All)
+            {
+                owned.Add(new MiniJson.Obj().Add("id", star.InstanceId).Add("starId", star.StarId).Add("grade", (long)star.Grade).Add("skillLevel", (long)star.SkillLevel));
+            }
             var stars = new MiniJson.Obj().Add("nextInstanceId", s.Stars.NextInstanceId).Add("owned", owned);
+            var boards = new MiniJson.Obj();
+            foreach (var b in s.Boards.Definitions)
+            {
+                var slots = new List<object>();
+                foreach (var id in s.Boards.SlotsOf(b.Chapter)) slots.Add(id);
+                boards.Add(b.Chapter.ToString(System.Globalization.CultureInfo.InvariantCulture), slots);
+            }
+            var freeDraw = new MiniJson.Obj().Add("day", s.FreeDraws.Day).Add("used", (long)s.FreeDraws.Used);
             var missions = new MiniJson.Obj();
             foreach (var m in s.Missions.Definitions)
             {
@@ -108,6 +132,8 @@ namespace ZodiacSignGuardian.Core.Session
                 .Add("offline", offline)
                 .Add("attendance", attendance)
                 .Add("stars", stars)
+                .Add("boards", boards)
+                .Add("freeDraw", freeDraw)
                 .Add("missions", missions);
             var sb = new StringBuilder();
             MiniJson.WriteValue(sb, Box(root));
@@ -132,13 +158,14 @@ namespace ZodiacSignGuardian.Core.Session
             }
         }
 
-        static readonly string[] RootKeys = { "saveVersion", "saveRevision", "lastSavedUtcMs", "progress", "wallet", "clock", "rng", "offline", "attendance", "stars", "missions" };
+        static readonly string[] RootKeys = { "saveVersion", "saveRevision", "lastSavedUtcMs", "progress", "wallet", "clock", "rng", "offline", "attendance", "stars", "boards", "freeDraw", "missions" };
         static readonly string[] ProgressKeys = { "chapter", "stage" };
         static readonly string[] OfflineKeys = { "settlementPointUtcMs", "activeElapsedUs", "leaveStage", "nextBundleId", "bundle" };
         static readonly string[] BundleKeys = { "id", "minutes", "amount", "adApplied" };
         static readonly string[] AttendanceKeys = { "nextDay", "lastClaimedDay" };
         static readonly string[] StarsKeys = { "nextInstanceId", "owned" };
-        static readonly string[] OwnedKeys = { "id", "starId" };
+        static readonly string[] OwnedKeys = { "id", "starId", "grade", "skillLevel" };
+        static readonly string[] FreeDrawKeys = { "day", "used" };
         static readonly string[] MissionKeys = { "progress", "claimed" };
         static readonly string[] ClockKeys = { "anchorUtcMs", "syncElapsedUs", "processedDay", "processedWeek", "battlePendingUs" };
 
@@ -228,8 +255,30 @@ namespace ZodiacSignGuardian.Core.Session
                 if (!Long(star, "id", out var id, out error)) return false;
                 star.TryGet("starId", out var starId);
                 if (!(starId is string starIdText)) { error = "stars.owned.starId는 문자열이어야 함"; return false; }
-                d.Stars.Add(new KeyValuePair<long, string>(id, starIdText));
+                if (!Long(star, "grade", out var grade, out error)) return false;
+                if (!Long(star, "skillLevel", out var skillLevel, out error)) return false;
+                d.Stars.Add(new SavedStar { Id = id, StarId = starIdText, Grade = grade, SkillLevel = skillLevel });
             }
+
+            if (!Child(root, "boards", out var boards, out error)) return false;
+            var boardSeen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in boards.Members)
+            {
+                if (!boardSeen.Add(m.Key)) { error = "boards 키가 겹침: " + m.Key; return false; }
+                if (!TryChapterKey(m.Key, out var chapter)) { error = "boards 키는 1 이상의 장 번호(앞 0 없음)여야 함: " + m.Key; return false; }
+                if (!(m.Value is List<object> slotList) || slotList.Count != 5) { error = "boards." + m.Key + "는 정수 5개의 배열이어야 함"; return false; }
+                var slots = new long[5];
+                for (var i = 0; i < 5; i++)
+                {
+                    if (!(slotList[i] is long slot)) { error = "boards." + m.Key + "의 칸은 정수여야 함"; return false; }
+                    slots[i] = slot;
+                }
+                d.Boards[chapter] = slots;
+            }
+
+            if (!Child(root, "freeDraw", out var freeDraw, out error) || !Keys(freeDraw, FreeDrawKeys, "freeDraw", out error)) return false;
+            if (!NullableLong(freeDraw, "day", out d.FreeDrawDay, out error)) return false;
+            if (!Long(freeDraw, "used", out d.FreeDrawUsed, out error)) return false;
 
             if (!Child(root, "missions", out var missions, out error)) return false;
             var missionSeen = new HashSet<string>(StringComparer.Ordinal);
@@ -244,6 +293,19 @@ namespace ZodiacSignGuardian.Core.Session
             }
             data = d;
             return true;
+        }
+
+        /// <summary>장 번호 키: 숫자만, 앞 0 없음, 1 이상 int 범위.</summary>
+        static bool TryChapterKey(string key, out long chapter)
+        {
+            chapter = 0;
+            if (key.Length == 0 || key.Length > 10 || key[0] == '0') return false;
+            foreach (var c in key)
+            {
+                if (c < '0' || c > '9') return false;
+                chapter = chapter * 10 + (c - '0');
+            }
+            return chapter <= int.MaxValue;
         }
 
         static bool Keys(MiniJson.Obj o, string[] expected, string where, out string error)

@@ -51,6 +51,16 @@ namespace ZodiacSignGuardian.Core.Session
             return new SessionLoadResult(Make(parts, new BattleAccumulator(), GameRng.FromSeed(seed), sessionNonce, options), errors);
         }
 
+        static readonly Dictionary<string, Element> ElementIds = new Dictionary<string, Element>(StringComparer.Ordinal)
+        {
+            ["wood"] = Element.Wood, ["fire"] = Element.Fire, ["earth"] = Element.Earth, ["metal"] = Element.Metal, ["water"] = Element.Water,
+        };
+
+        static readonly Dictionary<string, Rarity> RarityIds = new Dictionary<string, Rarity>(StringComparer.Ordinal)
+        {
+            ["common"] = Rarity.Common, ["rare"] = Rarity.Rare, ["hero"] = Rarity.Hero, ["legend"] = Rarity.Legend,
+        };
+
         /// <summary>
         /// 저장 불러오기(앱 시작·클라우드 상태로 교체). 불러온 상태는 활성·정산 대기·시간 미확인이고, 저장된 정산 기준 시점·활성 경과·
         /// 떠날 때 스테이지·미수령 묶음은 그대로 둔다(정산 대기만 켬, 설계서 v0.9 3절 "실행 상태").
@@ -94,9 +104,28 @@ namespace ZodiacSignGuardian.Core.Session
                 d.BundleId, d.BundleMinutes, d.BundleAmount, d.BundleAdApplied == 1, errors);
             if (d.AttendanceLastClaimedDay != null && !clock.IsPossibleDay(d.AttendanceLastClaimedDay.Value)) errors.Add("attendance.lastClaimedDay: 범위 밖");
             else parts.Attendance.TryRestore(d.AttendanceNextDay, d.AttendanceLastClaimedDay, errors);
+            // 등급·스킬 레벨은 long으로 읽었으므로 int로 바꾸기 전에 범위를 본다 (AGENTS.md 배운 점 2026-11-17)
             var stars = new List<OwnedStar>();
-            foreach (var kv in d.Stars) stars.Add(new OwnedStar(kv.Key, kv.Value));
-            parts.Stars.TryRestore(d.NextStarInstanceId, stars, errors);
+            var starsReadable = true;
+            foreach (var st in d.Stars)
+            {
+                if (st.Grade < 1 || st.Grade > StarInventory.MaxGrade) { errors.Add("stars: " + st.StarId + "의 등급 " + st.Grade + "가 1~" + StarInventory.MaxGrade + " 밖"); starsReadable = false; continue; }
+                if (st.SkillLevel < 1 || st.SkillLevel > parts.Catalog.Rules.MaxSkillLevel) { errors.Add("stars: " + st.StarId + "의 스킬 레벨 " + st.SkillLevel + "가 1~" + parts.Catalog.Rules.MaxSkillLevel + " 밖"); starsReadable = false; continue; }
+                stars.Add(new OwnedStar(st.Id, st.StarId, (int)st.Grade, (int)st.SkillLevel));
+            }
+            var starsOk = starsReadable && parts.Stars.TryRestore(d.NextStarInstanceId, stars, errors);
+            // 판 배치는 가진 별을 알아야 검사할 수 있다. 별을 읽지 못했으면 판 검사는 연쇄 문제가 되므로 건너뛴다 (이미 오류로 남음)
+            if (starsOk && d.Chapter >= 1 && d.Chapter <= int.MaxValue)
+            {
+                var boards = new Dictionary<int, long[]>();
+                foreach (var kv in d.Boards) boards[(int)kv.Key] = kv.Value; // 키는 SaveFormat이 1~int 범위로 읽음
+                parts.Boards.TryRestore(boards, parts.Stars, (int)d.Chapter, errors);
+            }
+            if (d.FreeDrawDay != null && !clock.IsPossibleDay(d.FreeDrawDay.Value)) errors.Add("freeDraw.day: 범위 밖");
+            else parts.FreeDraws.TryRestore(d.FreeDrawDay, d.FreeDrawUsed, parts.Catalog.Rules.FreeDrawsPerDay, errors);
+            // 스테이지·떠날 때 스테이지는 지금 빌드의 스테이지 표에 있어야 한다 (설계서 v0.12 "불러올 때 C4 검사")
+            if (!parts.Stages.Has(d.Stage)) errors.Add("progress.stage: 스테이지 표에 없는 " + d.Stage);
+            if (!parts.Stages.Has(d.LeaveStage)) errors.Add("offline.leaveStage: 스테이지 표에 없는 " + d.LeaveStage);
             var missions = new Dictionary<string, KeyValuePair<long, bool>>(StringComparer.Ordinal);
             foreach (var kv in d.Missions) missions[kv.Key] = new KeyValuePair<long, bool>(kv.Value.Key, kv.Value.Value == 1);
             parts.Missions.TryRestore(missions, errors);
@@ -109,7 +138,9 @@ namespace ZodiacSignGuardian.Core.Session
 
         static GameSession Make(Parts p, BattleAccumulator battle, GameRng rng, ulong sessionNonce, GameSessionOptions options)
         {
-            return new GameSession(p.Wallet, p.Clock, battle, rng, p.Missions, p.Attendance, p.Stars, p.Offline, sessionNonce, options);
+            var session = new GameSession(p.Wallet, p.Clock, battle, rng, p.Missions, p.Attendance, p.Stars, p.Offline, sessionNonce, options,
+                p.Boards, p.FreeDraws, p.Stages);
+            return session;
         }
 
         /// <summary>표 없이 저장의 요약만 읽는다 (두 기기 충돌 때 클라우드 쪽 요약을 보여줄 때). 형식이 틀리면 false.</summary>
@@ -136,6 +167,10 @@ namespace ZodiacSignGuardian.Core.Session
             public Attendance Attendance;
             public StarInventory Stars;
             public OfflineRewards Offline;
+            public StarCatalog Catalog;
+            public StarBoards Boards;
+            public FreeDraws FreeDraws;
+            public StageTable Stages;
         }
 
         /// <summary>
@@ -210,15 +245,12 @@ namespace ZodiacSignGuardian.Core.Session
                 return false;
             }
 
-            // 별: 지금 빌드의 별 id
-            var starIds = new List<string>();
-            foreach (var r in tables[Schemas.Stars].Rows)
-            {
-                if (r.Build != CurrentBuild) continue;
-                if (!r.IsValid("star_id")) { errors.Add("stars: " + r.Line + "번 행을 읽지 못함"); continue; }
-                starIds.Add(r.Str("star_id"));
-            }
-            p.Stars = new StarInventory(starIds);
+            // 별·희귀도·뽑기 설정·판·스테이지 (C4, 설계서 v0.12)
+            if (!TryStars(tables, p.Wallet, errors, out p.Catalog)) return false;
+            p.Stars = new StarInventory(p.Catalog);
+            if (!TryBoards(tables, p.Catalog, errors, out p.Boards)) return false;
+            p.FreeDraws = new FreeDraws();
+            if (!TryStages(tables, errors, out p.Stages)) return false;
 
             // 임무: 지금 빌드 행
             var missions = new List<MissionDefinition>();
@@ -258,6 +290,149 @@ namespace ZodiacSignGuardian.Core.Session
                 return false;
             }
             parts = p;
+            return true;
+        }
+
+        /// <summary>별(지금 빌드)·희귀도·뽑기 설정을 읽는다. 표 검사(8·12)를 통과한 표면 늘 되지만, 아닐 때도 예외 대신 오류로.</summary>
+        static bool TryStars(TableSet tables, Wallet wallet, List<string> errors, out StarCatalog catalog)
+        {
+            catalog = null;
+            var before = errors.Count;
+            var stars = new List<StarInfo>();
+            foreach (var r in tables[Schemas.Stars].Rows)
+            {
+                if (r.Build != CurrentBuild) continue;
+                if (!r.AllValid("star_id", "element", "rarity")) { errors.Add("stars: " + r.Line + "번 행을 읽지 못함"); continue; }
+                if (!ElementIds.TryGetValue(r.Str("element"), out var element) || !RarityIds.TryGetValue(r.Str("rarity"), out var rarity))
+                {
+                    errors.Add("stars." + r.Str("star_id") + ": 모르는 속성·희귀도");
+                    continue;
+                }
+                stars.Add(new StarInfo(r.Str("star_id"), element, rarity));
+            }
+            var rarities = new List<RarityInfo>();
+            foreach (var r in tables[Schemas.Rarities].Rows)
+            {
+                var cols = new[] { "rarity", "draw_weight", "dup_shards", "skill_coef_bp", "skill_cost_per_level", "grade2_cost", "grade3_cost", "grade4_cost", "grade5_cost" };
+                if (!r.AllValid(cols)) { errors.Add("rarities: " + r.Line + "번 행을 읽지 못함"); continue; }
+                if (!RarityIds.TryGetValue(r.Str("rarity"), out var rarity)) { errors.Add("rarities: 모르는 희귀도 " + r.Str("rarity")); continue; }
+                if (!IntIn(r, "draw_weight", 0, 10000, errors, out var weight) | !IntIn(r, "skill_coef_bp", 1, 100000, errors, out var coef)) continue;
+                rarities.Add(new RarityInfo(rarity, weight, r.Long("dup_shards"), coef, r.Long("skill_cost_per_level"),
+                    new[] { r.Long("grade2_cost"), r.Long("grade3_cost"), r.Long("grade4_cost"), r.Long("grade5_cost") }));
+            }
+            var ruleRows = tables[Schemas.StarRules].Rows;
+            if (ruleRows.Count != 1) { errors.Add("star_rules: 행이 정확히 1개여야 함 (지금 " + ruleRows.Count + "개)"); return false; }
+            var rule = ruleRows[0];
+            var ok = IntIn(rule, "free_draws_per_day", 0, 10, errors, out var free)
+                & IntIn(rule, "max_skill_level", 1, 1000, errors, out var maxSkill)
+                & IntIn(rule, "skill_step_bp", 0, 10000, errors, out var step)
+                & IntIn(rule, "own_bonus_bp", 0, 10000, errors, out var own)
+                & IntIn(rule, "link_same_bp", 0, 10000, errors, out var same)
+                & IntIn(rule, "link_generate_bp", 0, 10000, errors, out var generate)
+                & IntIn(rule, "board_complete_bp", 0, 10000, errors, out var complete);
+            if (!rule.AllValid("draw_currency", "shard_currency", "draw_cost", "draw10_cost")) { errors.Add("star_rules: 행을 읽지 못함"); return false; }
+            foreach (var col in new[] { "draw_currency", "shard_currency" })
+            {
+                var id = rule.Str(col);
+                if (!wallet.Has(id)) { errors.Add("star_rules." + col + ": 지금 빌드에 없는 재화 " + id); ok = false; }
+                else if (wallet.KindOf(id) != CurrencyKind.Integer) { errors.Add("star_rules." + col + ": 정수 재화가 아님 " + id); ok = false; }
+            }
+            if (!ok || errors.Count > before) return false;
+            try
+            {
+                var rules = new StarRules(rule.Str("draw_currency"), rule.Long("draw_cost"), rule.Long("draw10_cost"), free, rule.Str("shard_currency"),
+                    maxSkill, step, own, same, generate, complete);
+                catalog = new StarCatalog(stars, rarities, rules);
+            }
+            catch (ArgumentException e)
+            {
+                errors.Add("별·희귀도·뽑기 설정이 맞지 않음: " + e.Message);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>지금 빌드의 판(장마다 선 목록). 검사 9를 통과한 표면 늘 된다.</summary>
+        static bool TryBoards(TableSet tables, StarCatalog catalog, List<string> errors, out StarBoards boards)
+        {
+            boards = null;
+            var links = new SortedDictionary<long, List<BoardLink>>();
+            var ok = true;
+            foreach (var r in tables[Schemas.Boards].Rows)
+            {
+                if (r.Build != CurrentBuild) continue;
+                if (!r.AllValid("chapter", "slot_a", "slot_b")) { errors.Add("boards: " + r.Line + "번 행을 읽지 못함"); ok = false; continue; }
+                long ch = r.Long("chapter"), a = r.Long("slot_a"), b = r.Long("slot_b");
+                if (ch > int.MaxValue || a > StarBoards.SlotCount || b > StarBoards.SlotCount) { errors.Add("boards: " + r.Line + "번 행의 장·칸이 범위 밖"); ok = false; continue; }
+                if (!links.TryGetValue(ch, out var list)) links[ch] = list = new List<BoardLink>();
+                list.Add(new BoardLink((int)a, (int)b));
+            }
+            if (!ok) return false;
+            try
+            {
+                var defs = new List<BoardDefinition>();
+                foreach (var kv in links) defs.Add(new BoardDefinition((int)kv.Key, kv.Value));
+                boards = new StarBoards(catalog, defs);
+            }
+            catch (ArgumentException e)
+            {
+                errors.Add("판 표가 맞지 않음: " + e.Message);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>지금 빌드의 스테이지. 검사 11을 통과한 표면 1부터 빠짐없이 이어진다.</summary>
+        static bool TryStages(TableSet tables, List<string> errors, out StageTable stages)
+        {
+            stages = null;
+            var list = new List<StageInfo>();
+            var ok = true;
+            foreach (var r in tables[Schemas.Stages].Rows)
+            {
+                if (r.Build != CurrentBuild) continue;
+                if (!r.AllValid("stage_id", "chapter", "stage_in_chapter", "monster_hp", "dust_per_kill", "offline_dust_per_min", "kills_to_clear", "clear_time_sec"))
+                {
+                    errors.Add("stages: " + r.Line + "번 행을 읽지 못함");
+                    ok = false;
+                    continue;
+                }
+                if (!IntIn(r, "stage_id", 1, int.MaxValue, errors, out var id) | !IntIn(r, "chapter", 1, int.MaxValue, errors, out var ch)
+                    | !IntIn(r, "stage_in_chapter", 1, int.MaxValue, errors, out var inCh) | !IntIn(r, "kills_to_clear", 1, 1000, errors, out var kills)
+                    | !IntIn(r, "clear_time_sec", 1, 3600, errors, out var time))
+                {
+                    ok = false;
+                    continue;
+                }
+                if (!GameNumber.TryParseSave(r.Str("monster_hp"), out var hp) | !GameNumber.TryParseSave(r.Str("dust_per_kill"), out var dust)
+                    | !GameNumber.TryParseSave(r.Str("offline_dust_per_min"), out var offline) || hp.Sign <= 0 || dust.Sign <= 0 || offline.Sign <= 0)
+                {
+                    errors.Add("stages." + id + ": 큰 수 칸을 읽지 못함");
+                    ok = false;
+                    continue;
+                }
+                list.Add(new StageInfo(id, ch, inCh, hp, dust, offline, kills, time));
+            }
+            if (!ok) return false;
+            try
+            {
+                stages = new StageTable(list);
+            }
+            catch (ArgumentException e)
+            {
+                errors.Add("스테이지 표가 맞지 않음: " + e.Message);
+                return false;
+            }
+            return true;
+        }
+
+        static bool IntIn(TableRow row, string column, long min, long max, List<string> errors, out int value)
+        {
+            value = 0;
+            if (!row.IsValid(column) || row.IsBlank(column)) { errors.Add(column + ": 값이 없음"); return false; }
+            var v = row.Long(column);
+            if (v < min || v > max) { errors.Add(column + ": " + min + "~" + max + " 밖 (" + v + ")"); return false; }
+            value = (int)v;
             return true;
         }
 

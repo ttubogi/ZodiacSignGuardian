@@ -10,11 +10,11 @@ namespace ZodiacSignGuardian.Core.Tests.Data
     public class RepoTablesTests
     {
         [Test]
-        public void 저장소의_CSV_12개가_모든_검사를_통과한다()
+        public void 저장소의_CSV_15개가_모든_검사를_통과한다()
         {
             var r = TableBuilder.Build(RepoFiles.CsvBytes());
             TestTables.AssertNone(r.Issues);
-            Assert.That(r.Outputs.Count, Is.EqualTo(12));
+            Assert.That(r.Outputs.Count, Is.EqualTo(15));
         }
 
         [Test]
@@ -42,11 +42,21 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         public void m1_범위가_기획서와_맞다()
         {
             var set = TableBuilder.Build(RepoFiles.CsvBytes()).Tables;
-            // 기획서 v0.8: 1개월 빌드 = 1~3장, 별 15종, 재화 4종
+            // 기획서 v0.8: 1개월 빌드 = 1~3장, 재화 4종. 별은 2026-11-20 결정으로 60종(5속성 × 일반·희귀·영웅·전설 × 3종)
             var m1Chapters = set[Schemas.Boards].Rows.Where(r => r.Build == Schemas.M1).Select(r => r.Long("chapter")).Distinct().OrderBy(x => x);
             Assert.That(m1Chapters.ToArray(), Is.EqualTo(new long[] { 1, 2, 3 }));
-            Assert.That(set[Schemas.Stars].Rows.Count(r => r.Build == Schemas.M1), Is.EqualTo(15));
-            Assert.That(set[Schemas.Stars].Rows.Count, Is.EqualTo(30));
+            Assert.That(set[Schemas.Stars].Rows.Count(r => r.Build == Schemas.M1), Is.EqualTo(60));
+            Assert.That(set[Schemas.Stars].Rows.Count, Is.EqualTo(60));
+            foreach (var e in Schemas.Elements)
+            {
+                foreach (var rarity in Schemas.RarityIds)
+                {
+                    Assert.That(set[Schemas.Stars].Rows.Count(r => r.Build == Schemas.M1 && r.Str("element") == e && r.Str("rarity") == rarity), Is.EqualTo(3), e + " " + rarity);
+                }
+            }
+            // 2026-11-20 결정: 뽑기 확률 70 / 20 / 9 / 1 (%)
+            Assert.That(set[Schemas.Rarities].Rows.ToDictionary(r => r.Str("rarity"), r => r.Long("draw_weight")),
+                Is.EqualTo(new Dictionary<string, long> { ["common"] = 7000, ["rare"] = 2000, ["hero"] = 900, ["legend"] = 100 }));
             Assert.That(set[Schemas.Currencies].Rows.Count(r => r.Build == Schemas.M1), Is.EqualTo(4));
             Assert.That(set[Schemas.Currencies].Rows.Where(r => r.Str("number_type") == "game_number").Select(r => r.Str("currency_id")).ToArray(),
                 Is.EqualTo(new[] { "stardust" }), "설계서: 별가루만 game_number");
@@ -64,14 +74,14 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         [Test]
         public void 실제_출석표에서_14일을_빼면_잡는다()
         {
-            TestTables.AssertOnly(RunRepo("attendance", "14,star,fire_1,1\n", ""), TableIssueKind.Check4);
+            TestTables.AssertOnly(RunRepo("attendance", "14,star,fire_04,1\n", ""), TableIssueKind.Check4);
         }
 
         [Test]
         public void 실제_별_표에서_m1_별을_v1로_바꾸면_검사8과_출석의_검사7이_잡는다()
         {
-            // wood_1은 7일째 출석 보상이라 검사 7도 걸린다
-            var issues = RunRepo("stars", "wood_1,wood,나무 별 1,m1", "wood_1,wood,나무 별 1,v1");
+            // wood_04는 7일째 출석 보상이라 검사 7도 걸린다
+            var issues = RunRepo("stars", "wood_04,wood,rare,나무 별 4,m1", "wood_04,wood,rare,나무 별 4,v1");
             TestTables.AssertHas(issues, TableIssueKind.Check8);
             TestTables.AssertHas(issues, TableIssueKind.Check7);
         }

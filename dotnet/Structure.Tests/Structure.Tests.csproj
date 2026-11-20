@@ -19,4 +19,8 @@
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 스테이지 표 생성 도구가 저장소의 stages.csv와 같은 글자를 만드는지 본다 -->
+    <ProjectReference Include="../DataGen/DataGen.csproj" />
+  </ItemGroup>
 </Project>

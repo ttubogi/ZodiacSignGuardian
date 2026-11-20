@@ -4,7 +4,7 @@ using System.Linq;
 namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
-    /// 설계서 v0.7 2절 검사 1~10 중 표 사이·행 사이 검사.
+    /// 설계서 2절 검사 1~12 중 표 사이·행 사이 검사.
     /// 검사 3(양의 정수)과 검사 8·9의 값 모양은 칸을 읽을 때(TableLoader) 걸린다.
     /// </summary>
     public static class TableChecks
@@ -20,6 +20,8 @@ namespace ZodiacSignGuardian.Data.Tables
             Check8_Stars(set, issues);
             Check9_Boards(set, issues);
             Check10_ClockSettings(set, issues);
+            Check11_Stages(set, issues);
+            Check12_Gacha(set, issues);
             return issues;
         }
 
@@ -85,7 +87,7 @@ namespace ZodiacSignGuardian.Data.Tables
 
             void Ref(LoadedTable from, TableRow row, string column, string targetTable)
             {
-                if (!row.IsValid(column)) return;
+                if (!row.IsValid(column) || row.IsBlank(column)) return; // 빈 선택 칸은 가리키는 것이 없다
                 var id = (string)row[column];
                 if (!Idx(targetTable).TryGetValue(id, out var target))
                 {
@@ -251,8 +253,8 @@ namespace ZodiacSignGuardian.Data.Tables
             }
         }
 
-        // 8. m1에는 속성마다 3종씩 15종. (속성 이름은 칸을 읽을 때 검사)
-        public const int M1StarsPerElement = 3;
+        // 8. m1에서 속성 × 희귀도 칸마다 별 수가 모두 같고 1 이상. (속성·희귀도 이름은 칸을 읽을 때 검사)
+        //    2026-11-20 결정: 60종 = 5속성 × 4희귀도 × 3종. 3이라는 수는 표가 정하고, 검사는 '모든 칸이 같은 수'만 본다(★ Claude가 정함).
 
         static void Check8_Stars(TableSet set, List<TableIssue> issues)
         {
@@ -261,15 +263,23 @@ namespace ZodiacSignGuardian.Data.Tables
             // build가 m1이 아닌 것이 확실한 별의 칸은 m1 개수와 상관없으므로 건너뛰지 않는다 (Codex 검토 2026-11-16).
             if (t.Rows.Any(r => r.Build == null || (r.Build == Schemas.M1 && !r.IsValid("element")))) return;
             var m1 = t.Rows.Where(r => r.Build == Schemas.M1).ToList();
-            var wrong = Schemas.Elements
-                .Select(e => (element: e, count: m1.Count(r => r.Str("element") == e)))
-                .Where(x => x.count != M1StarsPerElement)
-                .ToList();
-            if (wrong.Count > 0 || m1.Count != Schemas.Elements.Length * M1StarsPerElement)
+            // 희귀도를 못 읽은 m1 별이 있으면 칸마다 셀 수 없다 (이미 형식 문제로 남음).
+            if (m1.Any(r => !r.IsValid("rarity"))) return;
+            var counts = new List<(string element, string rarity, int count)>();
+            foreach (var e in Schemas.Elements)
             {
-                Add(issues, TableIssueKind.Check8, t.Schema.Name, 0, "element",
-                    "m1 별은 속성마다 " + M1StarsPerElement + "종이어야 함. 지금: " +
-                    string.Join(", ", Schemas.Elements.Select(e => e + " " + m1.Count(r => r.Str("element") == e))) + " (합계 " + m1.Count + ")");
+                foreach (var rr in Schemas.RarityIds)
+                {
+                    counts.Add((e, rr, m1.Count(r => r.Str("element") == e && r.Str("rarity") == rr)));
+                }
+            }
+            var first = counts[0].count;
+            if (first < 1 || counts.Any(c => c.count != first))
+            {
+                Add(issues, TableIssueKind.Check8, t.Schema.Name, 0, "rarity",
+                    "m1 별은 속성·희귀도마다 같은 수(1 이상)여야 함. 지금: " +
+                    string.Join(", ", Schemas.Elements.Select(e => e + " " + string.Join("/", counts.Where(c => c.element == e).Select(c => c.count)))) +
+                    " (희귀도 순서 " + string.Join("/", Schemas.RarityIds) + ", 합계 " + m1.Count + ")");
             }
         }
 
@@ -409,6 +419,198 @@ namespace ZodiacSignGuardian.Data.Tables
                     Add(issues, TableIssueKind.Check10, t.Schema.Name, r.Line, "anchor_valid_min",
                         "anchor_valid_min(" + r.Long("anchor_valid_min") + ")은 sync_interval_min(" + r.Long("sync_interval_min") + ")보다 커야 함");
                 }
+            }
+        }
+
+        // 11. 스테이지 (설계서 v0.12 2절). 일의 양은 행 수에 비례한다(값 크기만큼 돌지 않음, AGENTS.md 배운 점 2026-11-15).
+        //   - stage_id는 1부터 빠짐없이(겹침은 검사 1). m1 행이 하나 이상이고 v1 행 뒤에 m1 행이 없다(m1 스테이지가 1부터 이어짐).
+        //   - stage_id 순서로 장은 1부터 빠짐없이 오르고(줄지 않고 한 번에 하나씩), 장 안의 stage_in_chapter는 1부터 하나씩 오른다.
+        //   - 보스 칸 4개(boss_hp, boss_time_sec, boss_reward_currency, boss_reward_amount)는 장 마지막 행에만 모두 있고 다른 행은 비어 있다.
+        //   - monster_hp·dust_per_kill·offline_dust_per_min은 다음 스테이지에서 줄지 않는다.
+        //   - 첫 돌파·보스 보상 재화는 정수 재화다(수량이 정수 칸이므로).
+        //   - m1 스테이지의 장마다 boards에 m1 판이 있다.
+        public static readonly string[] BossColumns = { "boss_hp", "boss_time_sec", "boss_reward_currency", "boss_reward_amount" };
+        static readonly string[] NonDecreasingColumns = { "monster_hp", "dust_per_kill", "offline_dust_per_min" };
+
+        static void Check11_Stages(TableSet set, List<TableIssue> issues)
+        {
+            var t = set[Schemas.Stages];
+            var name = t.Schema.Name;
+            if (!t.Complete) return; // 표의 틀을 못 읽었으면 행을 믿을 수 없음 (이미 형식 문제)
+            if (HasUnreadable(t, "stage_id", "chapter", "stage_in_chapter", "build")) return; // 순서·이어짐을 알 수 없음 (이미 형식 문제)
+            var rows = t.Rows.OrderBy(r => r.Long("stage_id")).ThenBy(r => r.Line).ToList();
+            if (rows.Count == 0 || rows.All(r => r.Build != Schemas.M1))
+            {
+                Add(issues, TableIssueKind.Check11, name, 0, null, "m1 스테이지가 하나도 없음");
+                return;
+            }
+
+            // stage_id: 정렬한 i번째가 i+1 (겹침은 검사 1이 알리므로 여기서는 같은 번호를 빈 번호로 세지 않는다)
+            long expect = 1;
+            var orderOk = true;
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var id = rows[i].Long("stage_id");
+                if (i > 0 && id == rows[i - 1].Long("stage_id")) { orderOk = false; continue; }
+                if (id != expect)
+                {
+                    Add(issues, TableIssueKind.Check11, name, rows[i].Line, "stage_id", "stage_id " + expect + "이 빠짐 (다음 번호 " + id + ")");
+                    orderOk = false;
+                    break; // 첫 빈 곳만 알린다 (그 뒤는 모두 같은 원인)
+                }
+                expect = id + 1; // id < long 최대값: 행 수보다 클 수 없음
+            }
+            if (!orderOk) return; // 순서를 믿을 수 없으면 장·보스·크기 비교는 연쇄 문제가 된다
+
+            for (var i = 1; i < rows.Count; i++)
+            {
+                if (rows[i - 1].Build != Schemas.M1 && rows[i].Build == Schemas.M1)
+                {
+                    Add(issues, TableIssueKind.Check11, name, rows[i].Line, "build", "v1 스테이지 뒤에 m1 스테이지가 있음 (m1 스테이지는 1부터 이어져야 함)");
+                }
+            }
+
+            // 장과 장 안 번호
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                long ch = r.Long("chapter"), inCh = r.Long("stage_in_chapter");
+                if (i == 0)
+                {
+                    if (ch != 1) Add(issues, TableIssueKind.Check11, name, r.Line, "chapter", "첫 스테이지의 장은 1이어야 함 (지금 " + ch + ")");
+                    if (inCh != 1) Add(issues, TableIssueKind.Check11, name, r.Line, "stage_in_chapter", "장의 첫 스테이지는 1이어야 함 (지금 " + inCh + ")");
+                    continue;
+                }
+                var p = rows[i - 1];
+                long pch = p.Long("chapter"), pin = p.Long("stage_in_chapter");
+                // 빼기로 비교한다: 양수끼리라 넘치지 않음
+                if (ch == pch)
+                {
+                    if (inCh - pin != 1) Add(issues, TableIssueKind.Check11, name, r.Line, "stage_in_chapter", "장 안 번호가 " + pin + " 다음에 " + inCh + " (하나씩 올라야 함)");
+                }
+                else if (ch - pch == 1)
+                {
+                    if (inCh != 1) Add(issues, TableIssueKind.Check11, name, r.Line, "stage_in_chapter", ch + "장의 첫 스테이지는 1이어야 함 (지금 " + inCh + ")");
+                }
+                else
+                {
+                    Add(issues, TableIssueKind.Check11, name, r.Line, "chapter", "장이 " + pch + " 다음에 " + ch + " (줄지 않고 하나씩 올라야 함)");
+                }
+            }
+
+            // 보스 칸: 장 마지막 행(다음 행의 장이 다르거나 마지막 행)에만 모두
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                var last = i == rows.Count - 1 || rows[i + 1].Long("chapter") != r.Long("chapter");
+                foreach (var col in BossColumns)
+                {
+                    if (!r.IsValid(col)) continue; // 못 읽은 칸은 이미 형식 문제
+                    if (last && r.IsBlank(col)) Add(issues, TableIssueKind.Check11, name, r.Line, col, r.Long("chapter") + "장 마지막 스테이지에 보스 값이 없음");
+                    if (!last && !r.IsBlank(col)) Add(issues, TableIssueKind.Check11, name, r.Line, col, "보스 값은 장 마지막 스테이지에만 씀");
+                }
+            }
+
+            // 줄지 않음: 이웃한 두 행의 값을 모두 읽었을 때만 비교
+            foreach (var col in NonDecreasingColumns)
+            {
+                for (var i = 1; i < rows.Count; i++)
+                {
+                    if (!rows[i - 1].IsValid(col) || !rows[i].IsValid(col)) continue;
+                    if (GameNumberText.Compare(rows[i].Str(col), rows[i - 1].Str(col)) < 0)
+                    {
+                        Add(issues, TableIssueKind.Check11, name, rows[i].Line, col,
+                            rows[i].Str(col) + "이 앞 스테이지(" + TableIssue.At(t.Source, rows[i - 1].Line) + ")의 " + rows[i - 1].Str(col) + "보다 작음");
+                    }
+                }
+            }
+
+            // 보상 재화는 정수 재화
+            var currencies = set[Schemas.Currencies];
+            var numberType = new Dictionary<string, string>();
+            foreach (var c in currencies.Rows.Where(c => c.AllValid("currency_id", "number_type")))
+            {
+                if (!numberType.ContainsKey(c.Str("currency_id"))) numberType[c.Str("currency_id")] = c.Str("number_type");
+            }
+            foreach (var r in rows)
+            {
+                foreach (var col in new[] { "first_clear_currency", "boss_reward_currency" })
+                {
+                    if (!r.IsValid(col) || r.IsBlank(col)) continue;
+                    if (numberType.TryGetValue(r.Str(col), out var type) && type != "integer")
+                    {
+                        Add(issues, TableIssueKind.Check11, name, r.Line, col, "'" + r.Str(col) + "'는 정수 재화가 아님 (수량 칸이 정수)");
+                    }
+                }
+            }
+
+            // m1 스테이지의 장마다 m1 판
+            var boards = set[Schemas.Boards];
+            if (HasUnreadable(boards, "chapter", "build")) return; // 판이 어느 장·빌드인지 모름 (이미 형식 문제)
+            var m1Boards = new HashSet<long>(boards.Rows.Where(b => b.Build == Schemas.M1).Select(b => b.Long("chapter")));
+            foreach (var ch in rows.Where(r => r.Build == Schemas.M1).GroupBy(r => r.Long("chapter")))
+            {
+                if (!m1Boards.Contains(ch.Key))
+                {
+                    Add(issues, TableIssueKind.Check11, name, ch.First().Line, "chapter", ch.Key + "장(m1)에 boards의 m1 판이 없음");
+                }
+            }
+        }
+
+        // 12. 뽑기 (설계서 v0.12 2절).
+        //   - rarities의 draw_weight 합은 10000(확률 1만분의 1). 희귀도 셋이 모두 있다(별의 비용을 찾을 수 있게).
+        //   - 확률이 0보다 큰 희귀도는 m1 별이 하나 이상 있다(뽑았는데 별이 없는 일이 없게).
+        //   - star_rules의 draw_currency·shard_currency는 정수 재화이고 서로 다르다.
+        public const long WeightTotal = 10000;
+
+        static void Check12_Gacha(TableSet set, List<TableIssue> issues)
+        {
+            var rarities = set[Schemas.Rarities];
+            var name = rarities.Schema.Name;
+            if (rarities.Complete && !HasUnreadable(rarities, "rarity"))
+            {
+                var have = new HashSet<string>(rarities.Rows.Select(r => r.Str("rarity")));
+                var missing = Schemas.RarityIds.Where(x => !have.Contains(x)).ToArray();
+                if (missing.Length > 0) Add(issues, TableIssueKind.Check12, name, 0, "rarity", "빠진 희귀도: " + string.Join(", ", missing));
+
+                if (!HasUnreadable(rarities, "draw_weight"))
+                {
+                    long sum = 0; // 칸마다 0~10000이고 행은 희귀도 수 이하(겹침은 검사 1)라 넘치지 않음
+                    foreach (var r in rarities.Rows) sum += r.Long("draw_weight");
+                    if (sum != WeightTotal) Add(issues, TableIssueKind.Check12, name, 0, "draw_weight", "확률 합이 " + sum + " (" + WeightTotal + "이어야 함)");
+
+                    var stars = set[Schemas.Stars];
+                    // m1일 수 있는 별의 희귀도를 못 읽었으면 '별이 없다'고 단정할 수 없다 (이미 형식 문제)
+                    if (!stars.Rows.Any(r => r.Build == null || (r.Build == Schemas.M1 && !r.IsValid("rarity"))))
+                    {
+                        var m1Rarities = new HashSet<string>(stars.Rows.Where(r => r.Build == Schemas.M1).Select(r => r.Str("rarity")));
+                        foreach (var r in rarities.Rows.Where(r => r.Long("draw_weight") > 0 && !m1Rarities.Contains(r.Str("rarity"))))
+                        {
+                            Add(issues, TableIssueKind.Check12, name, r.Line, "draw_weight", "확률이 있는 '" + r.Str("rarity") + "'에 m1 별이 없음");
+                        }
+                    }
+                }
+            }
+
+            var rules = set[Schemas.StarRules];
+            if (rules.Rows.Count != 1) return; // 행 수는 TableValidation이 알린다
+            var rule = rules.Rows[0];
+            var types = new Dictionary<string, string>();
+            foreach (var c in set[Schemas.Currencies].Rows.Where(c => c.AllValid("currency_id", "number_type")))
+            {
+                if (!types.ContainsKey(c.Str("currency_id"))) types[c.Str("currency_id")] = c.Str("number_type");
+            }
+            foreach (var col in new[] { "draw_currency", "shard_currency" })
+            {
+                if (!rule.IsValid(col)) continue;
+                if (types.TryGetValue(rule.Str(col), out var type) && type != "integer")
+                {
+                    Add(issues, TableIssueKind.Check12, rules.Schema.Name, rule.Line, col, "'" + rule.Str(col) + "'는 정수 재화가 아님");
+                }
+            }
+            if (rule.AllValid("draw_currency", "shard_currency") && rule.Str("draw_currency") == rule.Str("shard_currency"))
+            {
+                Add(issues, TableIssueKind.Check12, rules.Schema.Name, rule.Line, "shard_currency", "뽑기 재화와 별조각 재화가 같음 (비용과 별조각을 따로 확인함)");
             }
         }
     }

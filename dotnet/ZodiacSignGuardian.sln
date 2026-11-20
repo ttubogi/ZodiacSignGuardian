@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Structure.Tests", "Structur
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TableBuild", "TableBuild\TableBuild.csproj", "{C99F8E96-888D-40DC-84F6-6F2487A52E54}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataGen", "DataGen\DataGen.csproj", "{5CAC9174-34FE-4A93-AD47-52C4BEC7CDDA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,5 +44,9 @@ Global
 		{C99F8E96-888D-40DC-84F6-6F2487A52E54}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C99F8E96-888D-40DC-84F6-6F2487A52E54}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C99F8E96-888D-40DC-84F6-6F2487A52E54}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5CAC9174-34FE-4A93-AD47-52C4BEC7CDDA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5CAC9174-34FE-4A93-AD47-52C4BEC7CDDA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5CAC9174-34FE-4A93-AD47-52C4BEC7CDDA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5CAC9174-34FE-4A93-AD47-52C4BEC7CDDA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

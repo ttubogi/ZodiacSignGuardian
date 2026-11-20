@@ -16,12 +16,16 @@ namespace ZodiacSignGuardian.Core.Tests.Data
     {
         internal static Dictionary<string, string> Good()
         {
-            var stars = new StringBuilder("star_id,element,name_ko,build\n");
+            var stars = new StringBuilder("star_id,element,rarity,name_ko,build\n");
             foreach (var e in Schemas.Elements)
             {
-                for (int i = 1; i <= 3; i++) stars.Append(e + "_" + i + "," + e + "," + e + " " + i + ",m1\n");
+                // _1 일반, _2 희귀, _3 전설, _5 영웅 (영웅은 2026-11-20에 더함. 앞 번호를 그대로 두어 기존 테스트가 흔들리지 않게)
+                foreach (var (i, rarity) in new[] { (1, "common"), (2, "rare"), (3, "legend"), (5, "hero") })
+                {
+                    stars.Append(e + "_" + i + "," + e + "," + rarity + "," + e + " " + i + ",m1\n");
+                }
             }
-            stars.Append("wood_4,wood,wood 4,v1\n");
+            stars.Append("wood_4,wood,common,wood 4,v1\n");
 
             return new Dictionary<string, string>
             {
@@ -58,7 +62,8 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                     "currency_id,name_ko,number_type,build\n" +
                     "gold,금화,integer,m1\n" +
                     "dust,\"별가루, 반짝\",game_number,m1\n" +   // 따옴표 안 쉼표
-                    "dungeon_key,던전 열쇠,integer,v1\n",
+                    "dungeon_key,던전 열쇠,integer,v1\n" +
+                    "shard,별조각,integer,m1\n",               // 별조각 (star_rules, C4)
                 ["stars.csv"] = stars.ToString(),
                 ["boards.csv"] =
                     "chapter,constellation_id,slot_a,slot_b,build\n" +
@@ -70,6 +75,23 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                 ["ad_buffs.csv"] =
                     "buff_id,multiplier,duration_min,build\n" +
                     "hunt_double,2,30,m1\n",
+                ["rarities.csv"] =
+                    "rarity,draw_weight,dup_shards,skill_coef_bp,skill_cost_per_level,grade2_cost,grade3_cost,grade4_cost,grade5_cost\n" +
+                    "common,7000,5,3000,2,10,20,40,80\n" +
+                    "rare,2500,20,5000,5,20,40,80,160\n" +
+                    "hero,0,50,6500,7,30,60,120,240\n" +
+                    "legend,500,100,8000,10,40,80,160,320\n",
+                ["star_rules.csv"] =
+                    "draw_currency,draw_cost,draw10_cost,free_draws_per_day,shard_currency,max_skill_level,skill_step_bp,own_bonus_bp,link_same_bp,link_generate_bp,board_complete_bp\n" +
+                    "gold,100,900,1,shard,30,1000,200,2000,3000,1000\n",
+                // 1장(m1) 3스테이지 + 2장(v1) 2스테이지. 보스 칸은 장 마지막 행에만 (검사 11)
+                ["stages.csv"] =
+                    "stage_id,chapter,stage_in_chapter,monster_hp,dust_per_kill,offline_dust_per_min,kills_to_clear,clear_time_sec,first_clear_currency,first_clear_amount,boss_hp,boss_time_sec,boss_reward_currency,boss_reward_amount,build\n" +
+                    "1,1,1,2e1,2e0,2.4e1,15,60,gold,300,,,,,m1\n" +
+                    "2,1,2,2.626e1,2.32e0,2.784e1,15,60,gold,300,,,,,m1\n" +
+                    "3,1,3,3.447938e1,2.32e0,2.784e1,15,60,gold,300,2.0687628e2,30,gold,2000,m1\n" +
+                    "4,2,1,4.5e1,3e0,3.6e1,15,60,gold,300,,,,,v1\n" +
+                    "5,2,2,6e1,4e0,4.8e1,15,60,gold,300,3.6e2,30,dungeon_key,5,v1\n",
             };
         }
 

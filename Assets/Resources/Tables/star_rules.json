@@ -1,0 +1,7 @@
+{
+  "table": "star_rules",
+  "columns": ["draw_currency", "draw_cost", "draw10_cost", "free_draws_per_day", "shard_currency", "max_skill_level", "skill_step_bp", "own_bonus_bp", "link_same_bp", "link_generate_bp", "board_complete_bp"],
+  "rows": [
+    {"draw_currency": "galaxy_crystal", "draw_cost": 100, "draw10_cost": 900, "free_draws_per_day": 1, "shard_currency": "star_fragment", "max_skill_level": 30, "skill_step_bp": 1000, "own_bonus_bp": 200, "link_same_bp": 2000, "link_generate_bp": 3000, "board_complete_bp": 1000}
+  ]
+}

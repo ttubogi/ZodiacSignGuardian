@@ -6,7 +6,7 @@ using ZodiacSignGuardian.Data.Csv;
 namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
-    /// CSV 파일 12개를 읽어 TableSet으로 만든다. 여기서는 읽기만 한다:
+    /// CSV 파일 15개를 읽어 TableSet으로 만든다. 여기서는 읽기만 한다:
     /// 파일·인코딩·CSV 문법·머리줄·칸 수·칸 값 모양(검사 3과 검사 8·9의 값 모양 포함).
     /// 행 수·한 행 안의 규칙·표 사이 검사는 JSON과 같은 경로인 TableValidation이 한다.
     /// </summary>
@@ -14,7 +14,7 @@ namespace ZodiacSignGuardian.Data.Tables
     {
         static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
-        /// <summary>파일 이름(예: reset_rules.csv) → 바이트. 표 12개가 모두 있어야 한다.</summary>
+        /// <summary>파일 이름(예: reset_rules.csv) → 바이트. 표 15개가 모두 있어야 한다.</summary>
         public static TableSet LoadFiles(IReadOnlyDictionary<string, byte[]> files, List<TableIssue> issues)
         {
             var texts = new Dictionary<string, string>();
@@ -39,7 +39,7 @@ namespace ZodiacSignGuardian.Data.Tables
             var set = new TableSet();
             foreach (var name in texts.Keys.Where(k => Schemas.All.All(s => s.FileName != k)).OrderBy(k => k))
             {
-                issues.Add(new TableIssue(TableIssueKind.Format, TableName(name), 0, null, "알 수 없는 표 파일 (표 12개에 없음)"));
+                issues.Add(new TableIssue(TableIssueKind.Format, TableName(name), 0, null, "알 수 없는 표 파일 (표 15개에 없음)"));
             }
 
             foreach (var schema in Schemas.All)

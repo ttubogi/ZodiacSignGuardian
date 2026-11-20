@@ -42,7 +42,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             ["검사6: 경계가 reset_hour를 따름"] = t => t.Replace("reset_rules", "daily,daily,5,", "daily,daily,6,"),
             ["검사7: m1이 v1 재화"] = t => t.Replace("daily_missions", "kill_monsters,daily,kill_monster,100,gold,20,m1", "kill_monsters,daily,kill_monster,100,dungeon_key,20,m1"),
             ["검사7: 출석이 v1 별"] = t => t.Replace("attendance", "3,star,wood_1,1", "3,star,wood_4,1"),
-            ["검사8: m1 별 14종"] = t => t.Replace("stars", "water_3,water,water 3,m1", "water_3,water,water 3,v1"),
+            ["검사8: m1 별 14종"] = t => t.Replace("stars", "water_3,water,legend,water 3,m1", "water_3,water,legend,water 3,v1"),
             ["검사8: 속성 쏠림"] = t => t.Replace("stars", "water_3,water,", "water_3,fire,"),
             ["검사9: 칸 6"] = t => t.Replace("boards", "1,cassiopeia,4,5,m1", "1,cassiopeia,4,6,m1"),
             ["검사9: 자기 연결"] = t => t.AppendRow("boards", "1,cassiopeia,3,3,m1"),
@@ -51,6 +51,13 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             ["검사9: 별자리 다름"] = t => t.Replace("boards", "1,cassiopeia,4,5,m1", "1,lyra,4,5,m1"),
             ["검사9: 두 장에 같은 별자리"] = t => t.Replace("boards", "2,cygnus,", "2,cassiopeia,"),
             ["검사10: 시차 다름"] = t => t.Replace("reset_rules", "weekly,weekly,5,mon,,540,", "weekly,weekly,5,mon,,600,"),
+            ["검사8: 희귀도 짝"] = t => t.Replace("stars", "wood_2,wood,rare,", "wood_2,wood,common,"),
+            ["검사11: 빠진 스테이지"] = t => t.Replace("stages", "2,1,2,2.626e1,2.32e0,2.784e1,15,60,gold,300,,,,,m1\n", ""),
+            ["검사11: 보스 칸이 가운데"] = t => t.Replace("stages", "2,1,2,2.626e1,2.32e0,2.784e1,15,60,gold,300,,,,,m1", "2,1,2,2.626e1,2.32e0,2.784e1,15,60,gold,300,5e1,,,,m1"),
+            ["검사11: 체력이 줄어듦"] = t => t.Replace("stages", "2,1,2,2.626e1,", "2,1,2,1.9e1,"),
+            ["검사11: 판 없는 m1 장"] = t => t.Replace("stages", "gold,300,,,,,v1", "gold,300,,,,,m1").Replace("stages", "dungeon_key,5,v1", "gold,5,m1"),
+            ["검사12: 확률 합"] = t => t.Replace("rarities", "legend,500,", "legend,499,"),
+            ["검사12: 같은 재화"] = t => t.Replace("star_rules", ",1,shard,", ",1,gold,"),
             ["여러 위반 한꺼번에"] = t => t
                 .AppendRow("daily_missions", "kill_monsters,daily,kill_monster,1,gold,1,m1")
                 .Replace("weekly_challenge", "10,dungeon_key,3", "10,nothing,3")
@@ -58,7 +65,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                 .Replace("weekday_dungeons", "sun,dungeon_sun,dungeon_key,2\n", "")
                 .AppendRow("timed_events", "night,sun,04:30,05:30,gold")
                 .Replace("attendance", "3,star,wood_1,1", "3,star,wood_4,1")
-                .Replace("stars", "water_3,water,water 3,m1", "water_3,water,water 3,v1")
+                .Replace("stars", "water_3,water,legend,water 3,m1", "water_3,water,legend,water 3,v1")
                 .AppendRow("boards", "1,cassiopeia,3,3,m1")
                 .Replace("reset_rules", "weekly,weekly,5,mon,,540,", "weekly,weekly,5,mon,,600,")
                 .AppendRow("offline_reward", "600,1,2,1"),
@@ -115,7 +122,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         }
 
         [Test]
-        public void 비교_사례는_검사_1_2_4_5_6_7_8_9_10과_형식을_모두_덮는다()
+        public void 비교_사례는_검사_1_2_4부터_12까지와_형식을_모두_덮는다()
         {
             // 비교 사례가 줄어 한 검사가 빠지면 알 수 있게
             var kinds = new HashSet<TableIssueKind>();
@@ -124,6 +131,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             {
                 TableIssueKind.Format, TableIssueKind.Check1, TableIssueKind.Check2, TableIssueKind.Check4, TableIssueKind.Check5,
                 TableIssueKind.Check6, TableIssueKind.Check7, TableIssueKind.Check8, TableIssueKind.Check9, TableIssueKind.Check10,
+                TableIssueKind.Check11, TableIssueKind.Check12,
             };
             Assert.That(need.Where(k => !kinds.Contains(k)).ToArray(), Is.Empty);
         }

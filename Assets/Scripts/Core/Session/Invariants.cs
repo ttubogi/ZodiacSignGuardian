@@ -3,6 +3,7 @@ using ZodiacSignGuardian.Core.Ads;
 using ZodiacSignGuardian.Core.Commands;
 using ZodiacSignGuardian.Core.Economy;
 using ZodiacSignGuardian.Core.Numbers;
+using ZodiacSignGuardian.Core.Stars;
 
 namespace ZodiacSignGuardian.Core.Session
 {
@@ -25,7 +26,7 @@ namespace ZodiacSignGuardian.Core.Session
     /// 위반 규칙 검사 (설계서 5절). 개발·테스트 빌드에서 명령마다 돈다(GameSessionOptions.CheckInvariants, C2 결정 Q7).
     /// 출시 빌드에서도 하는 입력 검사(InvalidInput, 저장 읽기 검사)와는 다르다: 이것은 코드가 규칙을 어겼는지 보는 것이다.
     /// 검사는 값만 받아 판단하는 함수로 두어, 테스트에서 망가뜨린 값을 바로 넣어 볼 수 있게 한다.
-    /// C2에서 1·7·10번, C3에서 2·3·4·9번과 10번의 정산 기준 시점을 더했다. 5·6·8번은 C4·C6.
+    /// C2에서 1·7·10번, C3에서 2·3·4·9번과 10번의 정산 기준 시점을 더했다. C4에서 5·6번. 8번은 C6.
     /// </summary>
     public static class Invariants
     {
@@ -130,5 +131,65 @@ namespace ZodiacSignGuardian.Core.Session
                 found.Add(new InvariantViolation(10, "처리한 주간 구간이 뒤로 감: " + weekBefore + " → " + (weekAfter?.ToString() ?? "없음")));
             }
         }
+
+        /// <summary>
+        /// 규칙 5: 별 하나는 판 하나의 칸 하나에만 있다. 판의 별은 가진 별이고, 가진 별은 star_id마다 하나(등급 1~5, 스킬 레벨 1~최대)이며,
+        /// 닫힌 판(장 &gt; currentChapter)은 비어 있다.
+        /// </summary>
+        public static void CheckStarsAndPlacement(IReadOnlyList<OwnedStar> owned, int maxSkillLevel, IReadOnlyList<KeyValuePair<int, IReadOnlyList<long>>> boards,
+            int currentChapter, List<InvariantViolation> found)
+        {
+            var ids = new HashSet<long>();
+            var starIds = new HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var s in owned)
+            {
+                if (!ids.Add(s.InstanceId)) found.Add(new InvariantViolation(5, "별 인스턴스 번호가 겹침: " + s.InstanceId));
+                if (!starIds.Add(s.StarId)) found.Add(new InvariantViolation(5, "같은 별을 둘 가짐: " + s.StarId));
+                if (s.Grade < 1 || s.Grade > StarInventory.MaxGrade) found.Add(new InvariantViolation(5, s.StarId + "의 등급이 범위 밖: " + s.Grade));
+                if (s.SkillLevel < 1 || s.SkillLevel > maxSkillLevel) found.Add(new InvariantViolation(5, s.StarId + "의 스킬 레벨이 범위 밖: " + s.SkillLevel));
+            }
+            var placed = new HashSet<long>();
+            foreach (var b in boards)
+            {
+                for (var i = 0; i < b.Value.Count; i++)
+                {
+                    var id = b.Value[i];
+                    if (id == 0) continue;
+                    if (!ids.Contains(id)) found.Add(new InvariantViolation(5, b.Key + "장 칸 " + (i + 1) + "의 별 " + id + "를 가지지 않음"));
+                    if (!placed.Add(id)) found.Add(new InvariantViolation(5, "별 " + id + "가 두 칸에 있음"));
+                    if (b.Key > currentChapter) found.Add(new InvariantViolation(5, "닫힌 " + b.Key + "장 판에 별 " + id + "가 있음"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 규칙 6: 연결 보너스는 같은 속성이거나 상생 쌍(나무-불, 불-흙, 흙-쇠, 쇠-물, 물-나무)일 때만 켜진다.
+        /// 판이 들고 있는 켜진 선 목록(stored)을 배치에서 따로 다시 계산한 목록과 비교한다. 상생 쌍은 이 함수 안의 표로 따로 정한다
+        /// (StarCatalog.LinkOf와 같은 실수를 함께 놓치지 않게).
+        /// </summary>
+        public static void CheckLinks(int chapter, IReadOnlyList<BoardLink> links, IReadOnlyList<long> slots, System.Func<long, Element?> elementOf,
+            IReadOnlyList<ActiveLink> stored, List<InvariantViolation> found)
+        {
+            var expected = new List<ActiveLink>();
+            foreach (var l in links)
+            {
+                long a = slots[l.SlotA - 1], b = slots[l.SlotB - 1];
+                if (a == 0 || b == 0) continue;
+                var ea = elementOf(a);
+                var eb = elementOf(b);
+                if (ea == null || eb == null) continue;
+                if (ea.Value == eb.Value) expected.Add(new ActiveLink(l, LinkKind.Same));
+                else if (GeneratingPairs.Contains((ea.Value, eb.Value)) || GeneratingPairs.Contains((eb.Value, ea.Value))) expected.Add(new ActiveLink(l, LinkKind.Generate));
+            }
+            if (!StarBoards.SameLinks(expected, stored))
+            {
+                found.Add(new InvariantViolation(6, chapter + "장 판의 켜진 선 [" + string.Join(", ", stored) + "]이 배치에서 계산한 [" + string.Join(", ", expected) + "]와 다름"));
+            }
+        }
+
+        static readonly HashSet<(Element, Element)> GeneratingPairs = new HashSet<(Element, Element)>
+        {
+            (Element.Wood, Element.Fire), (Element.Fire, Element.Earth), (Element.Earth, Element.Metal), (Element.Metal, Element.Water), (Element.Water, Element.Wood),
+        };
     }
 }

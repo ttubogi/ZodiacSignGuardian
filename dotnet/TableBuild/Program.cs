@@ -8,7 +8,7 @@ using ZodiacSignGuardian.Data.Tables;
 namespace ZodiacSignGuardian.TableBuild
 {
     /// <summary>
-    /// Tables/csv의 CSV 12개를 검사하고, 모두 통과하면 Assets/Resources/Tables에 JSON 12개를 쓴다.
+    /// Tables/csv의 CSV 15개를 검사하고, 모두 통과하면 Assets/Resources/Tables에 JSON 15개를 쓴다.
     /// 하나라도 걸리면 아무것도 쓰지 않고 1로 끝난다.
     /// 출력 폴더가 Assets 안이면, 없는 .meta(폴더·JSON)만 새 GUID로 만든다. 있는 .meta는 건드리지 않는다.
     /// 인자: [check] [--csv 폴더] [--json 폴더]

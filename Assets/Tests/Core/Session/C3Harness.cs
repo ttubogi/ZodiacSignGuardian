@@ -73,6 +73,16 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             _lastRequest = 0;
         }
 
+        /// <summary>주어진 저장 글로 새 세션을 불러온다(저장 글을 손으로 바꾼 시험용). 실패하면 테스트 실패.</summary>
+        internal void LoadJson(string json, ulong nonce = DefaultNonce)
+        {
+            var r = GameSessionLoader.Load(T, json, nonce, new GameSessionOptions { CheckInvariants = S.Options.CheckInvariants });
+            Assert.That(r.Ok, Is.True, string.Join("\n", r.Errors));
+            r.Session.OfflineRateForStage = Rate;
+            S = r.Session;
+            _lastRequest = 0;
+        }
+
         internal List<GameEvent> Ok(CommandResult r)
         {
             Assert.That(r.Ok, Is.True, "실패: " + r);

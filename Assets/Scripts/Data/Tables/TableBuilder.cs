@@ -6,8 +6,8 @@ namespace ZodiacSignGuardian.Data.Tables
 {
     /// <summary>
     /// 표를 읽고 검사하는 입구 두 개.
-    /// - Build: CSV 12개 → 검사 → JSON 12개 (도구 TableBuild가 씀)
-    /// - LoadJson: JSON 12개 → 같은 검사 → 표 묶음 (게임 시작 때 Services가 씀)
+    /// - Build: CSV 15개 → 검사 → JSON 15개 (도구 TableBuild가 씀)
+    /// - LoadJson: JSON 15개 → 같은 검사 → 표 묶음 (게임 시작 때 Services가 씀)
     /// 두 입구 모두 읽은 뒤 TableValidation.Validate 하나만 거친다.
     /// 문제가 하나라도 있으면 출력(JSON·표 묶음)을 하나도 주지 않는다 (설계서 2절 "하나라도 걸리면 멈춘다").
     /// 파일 읽기·쓰기는 하지 않는다.
@@ -67,7 +67,7 @@ namespace ZodiacSignGuardian.Data.Tables
         }
 
         /// <summary>
-        /// JSON 12개(파일 이름 예: reset_rules.json → 글)를 읽고 CSV와 같은 검사를 돌린다.
+        /// JSON 15개(파일 이름 예: reset_rules.json → 글)를 읽고 CSV와 같은 검사를 돌린다.
         /// 값이 null인 항목은 파일이 없는 것으로 본다.
         /// </summary>
         public static JsonLoadResult LoadJson(IReadOnlyDictionary<string, string> jsonTexts)
@@ -75,7 +75,7 @@ namespace ZodiacSignGuardian.Data.Tables
             var issues = new List<TableIssue>();
             foreach (var name in jsonTexts.Keys.Where(k => Schemas.All.All(s => s.JsonFileName != k)).OrderBy(k => k))
             {
-                issues.Add(new TableIssue(TableIssueKind.Format, TableName(name), 0, null, "알 수 없는 표 JSON (표 12개에 없음)", TableSource.Json));
+                issues.Add(new TableIssue(TableIssueKind.Format, TableName(name), 0, null, "알 수 없는 표 JSON (표 15개에 없음)", TableSource.Json));
             }
 
             var set = new TableSet();

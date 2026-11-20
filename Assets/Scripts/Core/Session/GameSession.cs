@@ -63,8 +63,8 @@ namespace ZodiacSignGuardian.Core.Session
     /// <list type="bullet">
     /// <item>명령은 조건을 모두 확인한 뒤에만 상태를 바꾼다. 실패하면 상태는 그대로이고 이벤트도 없다 (C2 결정 Q4).</item>
     /// <item>위반 검사를 켜면 명령마다 규칙을 보고 Violations에 쌓는다. 실패한 명령은 전후 상태를 비교한다(규칙 7).</item>
-    /// <item>C3 범위: 시간·실행·저장(C2) + 오프라인 정산·수령, 광고 번호(StartAd·ConfirmAd), 출석, 일일 임무, 가진 별 목록(최소).
-    ///       전투·성장·별자리 판·뽑기·사냥 버프는 C4·C5.</item>
+    /// <item>C3 범위: 시간·실행·저장(C2) + 오프라인 정산·수령, 광고 번호(StartAd·ConfirmAd), 출석, 일일 임무, 가진 별 목록(최소).</item>
+    /// <item>C4 범위(설계서 v0.12): 별(중복·등급·스킬 레벨)·뽑기·별자리 판·추천 배치, 스테이지 표(오프라인 분당 보상). 전투·성장·사냥 버프는 C5.</item>
     /// <item>Services는 모든 명령을 하나의 직렬 경로로, 처리 시점까지의 미반영 경과를 한 번만 Advance한 뒤 넣는다(설계서 4절 Services 약속).</item>
     /// </list>
     /// 만들기와 불러오기는 GameSessionLoader가 한다(표 묶음을 받는 쪽은 Services).
@@ -85,6 +85,9 @@ namespace ZodiacSignGuardian.Core.Session
         internal StarInventory Stars { get; private set; }
         internal OfflineRewards Offline { get; private set; }
         internal AdTickets Ads { get; private set; }
+        internal StarBoards Boards { get; private set; }
+        internal FreeDraws FreeDraws { get; private set; }
+        internal StageTable Stages { get; }
 
         public GameSessionOptions Options { get; }
         public RunState RunState { get; private set; } = RunState.Active;
@@ -112,8 +115,7 @@ namespace ZodiacSignGuardian.Core.Session
         // ---- 테스트·다음 단계를 위한 자리 (internal) ----
 
         /// <summary>
-        /// 스테이지 → 분당 별가루 (2026-11-17 Q3 A안). 스테이지 표는 C4(DataGen)에서 생기므로 그 전 실제 게임은 null이고 분당 보상은 0이다.
-        /// 테스트는 손으로 만든 표를 넣는다.
+        /// 스테이지 → 분당 별가루. 기본은 stages.csv의 offline_dust_per_min(설계서 v0.12, C4). C3 테스트는 손으로 만든 값(0 포함)을 넣는다.
         /// </summary>
         internal Func<int, GameNumber> OfflineRateForStage { get; set; }
 
@@ -121,8 +123,13 @@ namespace ZodiacSignGuardian.Core.Session
         internal long TestKillsPerTick { get; set; }
 
         internal GameSession(Wallet wallet, Clock clock, BattleAccumulator battle, GameRng rng, Missions missions, Attendance attendance,
-            StarInventory stars, OfflineRewards offline, ulong sessionNonce, GameSessionOptions options)
+            StarInventory stars, OfflineRewards offline, ulong sessionNonce, GameSessionOptions options,
+            StarBoards boards, FreeDraws freeDraws, StageTable stages)
         {
+            Boards = boards ?? throw new ArgumentNullException(nameof(boards));
+            FreeDraws = freeDraws ?? throw new ArgumentNullException(nameof(freeDraws));
+            Stages = stages ?? throw new ArgumentNullException(nameof(stages));
+            OfflineRateForStage = Stages.OfflineRate;
             Wallet = wallet ?? throw new ArgumentNullException(nameof(wallet));
             Clock = clock ?? throw new ArgumentNullException(nameof(clock));
             Battle = battle ?? throw new ArgumentNullException(nameof(battle));
@@ -141,6 +148,19 @@ namespace ZodiacSignGuardian.Core.Session
             SaveRevision = saveRevision;
             Chapter = chapter;
             Stage = stage;
+        }
+
+        /// <summary>테스트용: 별 하나를 얻는다(뽑기 난수 없이). 이미 가지면 아무것도 하지 않는다. 별조각은 주지 않는다.</summary>
+        internal void GainStarForTest(string starId)
+        {
+            if (!Stars.Owns(starId)) Stars.Gain(starId, new List<GameEvent>());
+        }
+
+        /// <summary>테스트용: 장을 바꾼다 (진행은 C5). 판 N은 장이 N 이상이면 열린다.</summary>
+        internal void SetChapterForTest(int chapter)
+        {
+            if (chapter < 1) throw new ArgumentOutOfRangeException(nameof(chapter), chapter, "1 이상");
+            Chapter = chapter;
         }
 
         /// <summary>테스트용: 스테이지를 바꾼다 (진행은 C5).</summary>
@@ -172,7 +192,31 @@ namespace ZodiacSignGuardian.Core.Session
         public int AttendanceCycleDays => Attendance.CycleDays;
         /// <summary>지금 처리한 일일 구간에 출석을 받았는지. 날짜를 모르면 false.</summary>
         public bool AttendanceClaimedToday => Clock.ProcessedDay != null && Attendance.LastClaimedDay == Clock.ProcessedDay;
+        /// <summary>가진 별(인스턴스 번호, star_id, 등급, 스킬 레벨). 얻은 순서.</summary>
         public IReadOnlyList<OwnedStar> OwnedStars => Stars.All;
+        /// <summary>지금 빌드의 별 정의(속성·희귀도).</summary>
+        public IReadOnlyList<StarInfo> StarDefinitions => Stars.Catalog.All;
+        /// <summary>뽑기·별 성장·판 보너스 설정(뽑기 비용·재화, 하루 무료 수, 최대 스킬 레벨 등).</summary>
+        public StarRules StarSettings => Stars.Catalog.Rules;
+        /// <summary>오늘(처리한 일일 구간) 남은 무료 뽑기. 날짜를 모르면 null.</summary>
+        public int? FreeDrawsLeftToday => Clock.ProcessedDay == null ? (int?)null : FreeDraws.LeftOn(Clock.ProcessedDay.Value, StarSettings.FreeDrawsPerDay);
+        /// <summary>판마다 칸 다섯 개의 별·열림·켜진 선·완성 (장 순서).</summary>
+        public IReadOnlyList<BoardStatus> BoardStatuses
+        {
+            get
+            {
+                var list = new List<BoardStatus>();
+                foreach (var d in Boards.Definitions)
+                {
+                    list.Add(new BoardStatus(d.Chapter, StarBoards.IsOpen(d.Chapter, Chapter), new List<long>(Boards.SlotsOf(d.Chapter)), d.Links,
+                        new List<ActiveLink>(Boards.ActiveLinksOf(d.Chapter)), Boards.IsComplete(d.Chapter)));
+                }
+                return list;
+            }
+        }
+        /// <summary>지금 빌드의 스테이지 수.</summary>
+        public int StageCount => Stages.Count;
+        public StageInfo StageInfo(int stageId) => Stages[stageId];
 
         static long FloorDiv(long a, long b) => a / b - ((a % b != 0) && ((a < 0) != (b < 0)) ? 1 : 0);
 
@@ -349,6 +393,7 @@ namespace ZodiacSignGuardian.Core.Session
         /// <summary>
         /// 출석 받기. 날짜 의존 기능, 같은 일일 구간에 받았으면 AlreadyClaimed. 받기를 누른 날만 차례가 오른다.
         /// 재화면 CurrencyChanged, 별이면 가진 별 목록에 하나를 더하고 StarObtained(별 생성과 출석 처리는 함께, 별 amount는 1만).
+        /// 이미 가진 별이면 그 희귀도의 dup_shards만큼 별조각과 StarDuplicated·CurrencyChanged(StarDuplicate).
         /// </summary>
         public CommandResult ClaimAttendance()
         {
@@ -368,16 +413,29 @@ namespace ZodiacSignGuardian.Core.Session
                     if (error != null) return error;
                     change = c;
                 }
-                else
+                var duplicate = false;
+                CurrencyChange shardChange = default;
+                if (reward.Kind == AttendanceRewardKind.Star)
                 {
                     // 별 보상은 한 번에 하나(amount 1). 표 검사 4와 표 읽기가 막지만 지급 전에도 본다 (K5)
                     if (reward.Amount != 1) return ErrorCode.InvalidInput;
-                    error = Stars.CheckAdd(reward.RewardId);
+                    error = Stars.CheckGain(reward.RewardId, null, out duplicate, out var shards);
                     if (error != null) return error;
+                    if (duplicate)
+                    {
+                        // 이미 가진 별이면 별조각 (설계서 v0.12, v0.10 변경)
+                        shardChange = CurrencyChange.Of(StarSettings.ShardCurrency, shards);
+                        error = Wallet.Check(shardChange);
+                        if (error != null) return error;
+                    }
                 }
                 // 여기부터 바꾼다
                 if (change != null) Wallet.Apply(change.Value, CurrencyReason.AttendanceReward, events);
-                else Stars.Add(reward.RewardId, events);
+                else
+                {
+                    Stars.Gain(reward.RewardId, events);
+                    if (duplicate) Wallet.Apply(shardChange, CurrencyReason.StarDuplicate, events);
+                }
                 Paid("attendance:" + today);
                 Attendance.MarkClaimed(today);
                 return null;
@@ -404,6 +462,190 @@ namespace ZodiacSignGuardian.Core.Session
                 Missions.MarkClaimed(missionId);
                 return null;
             }, CommandKind.DateDependent);
+        }
+
+        // ---- 별 (C4) ----
+
+        /// <summary>
+        /// 별 뽑기 (설계서 v0.12 "별 뽑기"). count는 1 또는 10, payWith는 Crystal·Free. 그 밖의 값이나 Free인데 10이면 InvalidInput.
+        /// Free는 날짜 의존 기능(TimeNotVerified·TimeWentBack)이고 그날 무료 수를 다 썼으면 AlreadyClaimed. Crystal은 비용이 부족하면 NotEnoughCurrency.
+        /// 난수 사본으로 결과를 먼저 정하고 별조각 합계·새 인스턴스 번호를 확인한 뒤(넘치면 InvalidInput) 한 번에 바꾼다.
+        /// 이벤트: 비용 CurrencyChanged(StarDraw) → 뽑은 순서대로 StarObtained·StarDuplicated → 별조각 합계 CurrencyChanged(StarDuplicate) → 임무.
+        /// draw_star 임무는 명령 시각이 날짜 조건을 만족할 때만 count만큼 센다.
+        /// </summary>
+        public CommandResult DrawStar(int count, DrawPayment payWith)
+        {
+            return Execute("DrawStar", events =>
+            {
+                if (!Gacha.IsValidCount(count) || (payWith != DrawPayment.Crystal && payWith != DrawPayment.Free)) return ErrorCode.InvalidInput;
+                if (payWith == DrawPayment.Free && count != 1) return ErrorCode.InvalidInput;
+                var rules = StarSettings;
+                var gate = Clock.DateGate();
+                CurrencyChange? cost = null;
+                if (payWith == DrawPayment.Free)
+                {
+                    if (gate != null) return gate;
+                    var freeError = FreeDraws.Check(Clock.ProcessedDay.Value, rules.FreeDrawsPerDay);
+                    if (freeError != null) return freeError;
+                }
+                else
+                {
+                    var c = CurrencyChange.Of(rules.DrawCurrency, -(count == 1 ? rules.DrawCost : rules.Draw10Cost));
+                    var costError = Wallet.Check(c);
+                    if (costError != null) return costError;
+                    cost = c;
+                }
+                // 난수 사본에서 결과를 정한다 (실패하면 난수 상태도 그대로)
+                var rng = Rng.Clone();
+                var drawn = Gacha.Draw(rng, Stars.Catalog, count);
+                var pendingNew = new HashSet<string>(StringComparer.Ordinal);
+                long shards = 0;
+                foreach (var starId in drawn)
+                {
+                    var gainError = Stars.CheckGain(starId, pendingNew, out var duplicate, out var s, pendingNew.Count);
+                    if (gainError != null) return gainError;
+                    if (duplicate)
+                    {
+                        if (s > long.MaxValue - shards) return ErrorCode.InvalidInput; // 별조각 합계 넘침
+                        shards += s;
+                    }
+                    else pendingNew.Add(starId);
+                }
+                CurrencyChange? shardChange = null;
+                if (shards > 0)
+                {
+                    var sc = CurrencyChange.Of(rules.ShardCurrency, shards);
+                    var shardError = Wallet.Check(sc); // 뽑기 재화와 별조각 재화는 다르다(검사 12, 표 읽기)
+                    if (shardError != null) return shardError;
+                    shardChange = sc;
+                }
+                // 여기부터 바꾼다
+                Rng = rng;
+                if (cost != null) Wallet.Apply(cost.Value, CurrencyReason.StarDraw, events);
+                if (payWith == DrawPayment.Free)
+                {
+                    Paid("freedraw:" + Clock.ProcessedDay.Value + ":" + (FreeDraws.Day == Clock.ProcessedDay ? FreeDraws.Used + 1 : 1));
+                    FreeDraws.Use(Clock.ProcessedDay.Value, rules.FreeDrawsPerDay);
+                }
+                foreach (var starId in drawn) Stars.Gain(starId, events);
+                if (shardChange != null) Wallet.Apply(shardChange.Value, CurrencyReason.StarDuplicate, events);
+                if (gate == null) Missions.Record("draw_star", count, events);
+                return null;
+            }, CommandKind.DateDependent);
+        }
+
+        /// <summary>별 등급 올리기(1→5). 가지지 않은 번호 → StarNotOwned, 등급 5 → InvalidTarget, 별조각 부족 → NotEnoughCurrency.</summary>
+        public CommandResult UpgradeStar(long starInstanceId)
+        {
+            return Execute("UpgradeStar", events =>
+            {
+                var error = Stars.CheckGradeUp(starInstanceId, out var cost);
+                if (error != null) return error;
+                var change = CurrencyChange.Of(StarSettings.ShardCurrency, -cost);
+                error = Wallet.Check(change);
+                if (error != null) return error;
+                // 여기부터 바꾼다
+                Wallet.Apply(change, CurrencyReason.StarGradeUp, events);
+                Stars.GradeUp(starInstanceId, events);
+                return null;
+            });
+        }
+
+        /// <summary>
+        /// 별 스킬 레벨 올리기(1→max_skill_level). 비용은 skill_cost_per_level × 지금 레벨 별조각.
+        /// 실패 순서는 UpgradeStar와 같다(StarNotOwned → InvalidTarget → NotEnoughCurrency).
+        /// </summary>
+        public CommandResult UpgradeSkill(long starInstanceId)
+        {
+            return Execute("UpgradeSkill", events =>
+            {
+                var error = Stars.CheckSkillUp(starInstanceId, out var cost);
+                if (error != null) return error;
+                var change = CurrencyChange.Of(StarSettings.ShardCurrency, -cost);
+                error = Wallet.Check(change);
+                if (error != null) return error;
+                // 여기부터 바꾼다
+                Wallet.Apply(change, CurrencyReason.SkillLevelUp, events);
+                Stars.SkillUp(starInstanceId, events);
+                return null;
+            });
+        }
+
+        /// <summary>판·칸 확인: 없는 판이나 칸 1~5 밖 → InvalidTarget, 닫힌 판 → NotUnlocked.</summary>
+        ErrorCode? CheckBoard(int chapter, int? slot)
+        {
+            if (!Boards.Has(chapter) || (slot != null && (slot < 1 || slot > StarBoards.SlotCount))) return ErrorCode.InvalidTarget;
+            if (!StarBoards.IsOpen(chapter, Chapter)) return ErrorCode.NotUnlocked;
+            return null;
+        }
+
+        /// <summary>
+        /// 별 놓기. 실패 순서: 없는 판·칸 → InvalidTarget, 닫힌 판 → NotUnlocked, 가지지 않은 번호 → StarNotOwned.
+        /// 이미 그 칸에 있으면 성공·이벤트 없음. 그 밖에는 원래 자리(다른 판이나 같은 판의 다른 칸)에서 빼고 놓으며, 칸에 있던 별은 판에서 빠진다.
+        /// 배치가 바뀌면 place_star 임무를 1 센다(명령 시각의 날짜 조건).
+        /// </summary>
+        public CommandResult PlaceStar(int chapter, int slot, long starInstanceId)
+        {
+            return Execute("PlaceStar", events =>
+            {
+                var error = CheckBoard(chapter, slot);
+                if (error != null) return error;
+                if (!Stars.TryFind(starInstanceId, out _)) return ErrorCode.StarNotOwned;
+                var next = Boards.CopySlots();
+                if (Boards.TryLocate(starInstanceId, out var fromChapter, out var fromSlot))
+                {
+                    if (fromChapter == chapter && fromSlot == slot) return null;
+                    next[fromChapter][fromSlot - 1] = 0;
+                }
+                next[chapter][slot - 1] = starInstanceId;
+                ApplyBoards(next, events);
+                return null;
+            }, CommandKind.DateDependent);
+        }
+
+        /// <summary>별 빼기. 없는 판·칸 → InvalidTarget, 닫힌 판 → NotUnlocked, 빈 칸 → NotReady. 임무는 세지 않는다.</summary>
+        public CommandResult RemoveStar(int chapter, int slot)
+        {
+            return Execute("RemoveStar", events =>
+            {
+                var error = CheckBoard(chapter, slot);
+                if (error != null) return error;
+                if (Boards.SlotsOf(chapter)[slot - 1] == 0) return ErrorCode.NotReady;
+                var next = Boards.CopySlots();
+                next[chapter][slot - 1] = 0;
+                Boards.Apply(next, Stars, events);
+                return null;
+            });
+        }
+
+        /// <summary>
+        /// 추천 배치. 없는 판 → InvalidTarget, 닫힌 판 → NotUnlocked, 놓을 별이 없으면 NotReady.
+        /// 다른 판에 놓이지 않은 별과 이 판의 별 중에서 점수가 가장 큰 배치로 바꾼다(StarBoards.BestArrangement). 같으면 성공·이벤트 없음.
+        /// 배치가 바뀌면 place_star 임무를 1 센다.
+        /// </summary>
+        public CommandResult AutoArrange(int chapter)
+        {
+            return Execute("AutoArrange", events =>
+            {
+                var error = CheckBoard(chapter, null);
+                if (error != null) return error;
+                var candidates = new List<OwnedStar>();
+                foreach (var s in Stars.All)
+                {
+                    if (!Boards.TryLocate(s.InstanceId, out var at, out _) || at == chapter) candidates.Add(s);
+                }
+                if (candidates.Count == 0) return ErrorCode.NotReady;
+                var next = Boards.CopySlots();
+                next[chapter] = Boards.BestArrangement(chapter, candidates);
+                ApplyBoards(next, events);
+                return null;
+            }, CommandKind.DateDependent);
+        }
+
+        void ApplyBoards(Dictionary<int, long[]> next, List<GameEvent> events)
+        {
+            var gate = Clock.DateGate();
+            if (Boards.Apply(next, Stars, events) && gate == null) Missions.Record("place_star", 1, events);
         }
 
         bool TryRewardChange(string currencyId, long amount, out CurrencyChange change)
@@ -496,6 +738,14 @@ namespace ZodiacSignGuardian.Core.Session
             Invariants.CheckOfflineBundle(Offline.HasBundle, Offline.BundleMinutes, Offline.BundleAmount, Offline.Config.MaxMinutes, Offline.Config.AdMultiplier, _violations);
             Invariants.CheckTickets(before.Ads.States(), Ads.States(), usedFor, _violations);
 
+            var boards = new List<KeyValuePair<int, IReadOnlyList<long>>>();
+            foreach (var d in Boards.Definitions)
+            {
+                boards.Add(new KeyValuePair<int, IReadOnlyList<long>>(d.Chapter, Boards.SlotsOf(d.Chapter)));
+                Invariants.CheckLinks(d.Chapter, d.Links, Boards.SlotsOf(d.Chapter), id => StarBoards.ElementOf(Stars, id), Boards.ActiveLinksOf(d.Chapter), _violations);
+            }
+            Invariants.CheckStarsAndPlacement(Stars.All, StarSettings.MaxSkillLevel, boards, Chapter, _violations);
+
             var accrued = Offline.BundleMinutes > before.Offline.BundleMinutes;
             Invariants.CheckOfflineAccrualValid(accrued, Clock.Status == TimeStatus.Valid, _violations);
             if (kind != CommandKind.Time)
@@ -503,7 +753,8 @@ namespace ZodiacSignGuardian.Core.Session
                 // 광고 적용 표시(ConfirmAd)와 떠날 때 스테이지(Suspend·저장)는 날짜 의존 상태가 아니다
                 var offlineChanged = before.Offline.BundleId != Offline.BundleId || before.Offline.BundleMinutes != Offline.BundleMinutes
                     || !before.Offline.BundleAmount.Equals(Offline.BundleAmount);
-                var changed = !before.Missions.SameState(Missions) || !before.Attendance.SameState(Attendance) || offlineChanged;
+                var changed = !before.Missions.SameState(Missions) || !before.Attendance.SameState(Attendance) || offlineChanged
+                    || !before.FreeDraws.SameState(FreeDraws);
                 Invariants.CheckDateDependent(name, gateBefore, changed, _violations);
             }
         }
@@ -520,6 +771,8 @@ namespace ZodiacSignGuardian.Core.Session
             public StarInventory Stars;
             public OfflineRewards Offline;
             public AdTickets Ads;
+            public StarBoards Boards;
+            public FreeDraws FreeDraws;
             public double Residual;
             public RunState Run;
             public bool Pending;
@@ -531,7 +784,7 @@ namespace ZodiacSignGuardian.Core.Session
             {
                 return Wallet.SameState(o.Wallet) && Clock.SameState(o.Clock) && Battle.SameState(o.Battle) && Rng.SameState(o.Rng)
                     && Missions.SameState(o.Missions) && Attendance.SameState(o.Attendance) && Stars.SameState(o.Stars)
-                    && Offline.SameState(o.Offline) && Ads.SameState(o.Ads)
+                    && Offline.SameState(o.Offline) && Ads.SameState(o.Ads) && Boards.SameState(o.Boards) && FreeDraws.SameState(o.FreeDraws)
                     && Residual.Equals(o.Residual) && Run == o.Run && Pending == o.Pending && Revision == o.Revision && Chapter == o.Chapter && Stage == o.Stage;
             }
         }
@@ -542,6 +795,7 @@ namespace ZodiacSignGuardian.Core.Session
             {
                 Wallet = Wallet.Clone(), Clock = Clock.Clone(), Battle = Battle.Clone(), Rng = Rng.Clone(),
                 Missions = Missions.Clone(), Attendance = Attendance.Clone(), Stars = Stars.Clone(), Offline = Offline.Clone(), Ads = Ads.Clone(),
+                Boards = Boards.Clone(), FreeDraws = FreeDraws.Clone(),
                 Residual = Converter.ResidualUs, Run = RunState, Pending = SettlementPending, Revision = SaveRevision, Chapter = Chapter, Stage = Stage,
             };
         }

@@ -2,10 +2,10 @@
   "table": "daily_missions",
   "columns": ["mission_id", "reset_rule", "condition", "target_count", "reward_currency", "reward_amount", "build"],
   "rows": [
-    {"mission_id": "kill_monsters", "reset_rule": "daily", "condition": "kill_monster", "target_count": 100, "reward_currency": "galaxy_crystal", "reward_amount": 20, "build": "m1"},
-    {"mission_id": "upgrade_stats", "reset_rule": "daily", "condition": "upgrade_stat", "target_count": 10, "reward_currency": "stardust", "reward_amount": 1000, "build": "m1"},
-    {"mission_id": "draw_stars", "reset_rule": "daily", "condition": "draw_star", "target_count": 5, "reward_currency": "galaxy_crystal", "reward_amount": 20, "build": "m1"},
-    {"mission_id": "claim_offline", "reset_rule": "daily", "condition": "claim_offline", "target_count": 1, "reward_currency": "enhance_stone", "reward_amount": 5, "build": "m1"},
-    {"mission_id": "clear_boss", "reset_rule": "daily", "condition": "clear_boss", "target_count": 1, "reward_currency": "galaxy_crystal", "reward_amount": 30, "build": "m1"}
+    {"mission_id": "kill_monsters", "reset_rule": "daily", "condition": "kill_monster", "target_count": 300, "reward_currency": "galaxy_crystal", "reward_amount": 350, "build": "m1"},
+    {"mission_id": "upgrade_stats", "reset_rule": "daily", "condition": "upgrade_stat", "target_count": 10, "reward_currency": "galaxy_crystal", "reward_amount": 350, "build": "m1"},
+    {"mission_id": "draw_stars", "reset_rule": "daily", "condition": "draw_star", "target_count": 1, "reward_currency": "galaxy_crystal", "reward_amount": 350, "build": "m1"},
+    {"mission_id": "claim_offline", "reset_rule": "daily", "condition": "claim_offline", "target_count": 1, "reward_currency": "galaxy_crystal", "reward_amount": 350, "build": "m1"},
+    {"mission_id": "place_stars", "reset_rule": "daily", "condition": "place_star", "target_count": 1, "reward_currency": "galaxy_crystal", "reward_amount": 350, "build": "m1"}
   ]
 }

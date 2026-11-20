@@ -51,7 +51,8 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             h.Pause();
             h.Resume();
             AssertRoundTrip(h, "정산 대기");
-            h.S.SetStageForTest(int.MaxValue);
+            // C4부터 스테이지는 스테이지 표에 있어야 불러올 수 있다 (표 밖은 C4SaveTests)
+            h.S.SetStageForTest(h.S.StageCount);
             AssertRoundTrip(h, "스테이지 끝값");
         }
 
@@ -94,10 +95,10 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 ("출석 차례 0", j => R(j, "\"nextDay\": 2", "\"nextDay\": 0")),
                 ("출석 차례 4", j => R(j, "\"nextDay\": 2", "\"nextDay\": 4")),
                 ("출석 날 범위 밖", j => System.Text.RegularExpressions.Regex.Replace(j, "\"lastClaimedDay\": \\d+", "\"lastClaimedDay\": 9223372036854775807")),
-                ("별 번호 겹침", j => R(j, "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\"}, {\"id\": 1, \"starId\": \"wood_2\"}]")),
-                ("별 번호가 다음 번호 이상", j => R(j, "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\"}]")),
-                ("v1 별", j => R(R(j, "\"nextInstanceId\": 1", "\"nextInstanceId\": 2"), "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_4\"}]")),
-                ("별 키 남음", j => R(R(j, "\"nextInstanceId\": 1", "\"nextInstanceId\": 2"), "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\", \"x\": 1}]")),
+                ("별 번호 겹침", j => R(j, "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\", \"grade\": 1, \"skillLevel\": 1}, {\"id\": 1, \"starId\": \"wood_2\", \"grade\": 1, \"skillLevel\": 1}]")),
+                ("별 번호가 다음 번호 이상", j => R(j, "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\", \"grade\": 1, \"skillLevel\": 1}]")),
+                ("v1 별", j => R(R(j, "\"nextInstanceId\": 1", "\"nextInstanceId\": 2"), "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_4\", \"grade\": 1, \"skillLevel\": 1}]")),
+                ("별 키 남음", j => R(R(j, "\"nextInstanceId\": 1", "\"nextInstanceId\": 2"), "\"owned\": []", "\"owned\": [{\"id\": 1, \"starId\": \"wood_1\", \"grade\": 1, \"skillLevel\": 1, \"x\": 1}]")),
                 ("임무 진행 목표 넘음", j => R(j, "\"kill_ten\": {\"progress\": 3", "\"kill_ten\": {\"progress\": 11")),
                 ("임무 진행 음수", j => R(j, "\"kill_ten\": {\"progress\": 3", "\"kill_ten\": {\"progress\": -1")),
                 ("받았는데 목표 미달", j => R(j, "\"kill_ten\": {\"progress\": 3, \"claimed\": 0", "\"kill_ten\": {\"progress\": 3, \"claimed\": 1")),

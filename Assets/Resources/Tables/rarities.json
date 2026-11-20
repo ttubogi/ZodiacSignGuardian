@@ -1,0 +1,10 @@
+{
+  "table": "rarities",
+  "columns": ["rarity", "draw_weight", "dup_shards", "skill_coef_bp", "skill_cost_per_level", "grade2_cost", "grade3_cost", "grade4_cost", "grade5_cost"],
+  "rows": [
+    {"rarity": "common", "draw_weight": 7000, "dup_shards": 5, "skill_coef_bp": 3000, "skill_cost_per_level": 2, "grade2_cost": 10, "grade3_cost": 20, "grade4_cost": 40, "grade5_cost": 80},
+    {"rarity": "rare", "draw_weight": 2000, "dup_shards": 20, "skill_coef_bp": 5000, "skill_cost_per_level": 5, "grade2_cost": 20, "grade3_cost": 40, "grade4_cost": 80, "grade5_cost": 160},
+    {"rarity": "hero", "draw_weight": 900, "dup_shards": 50, "skill_coef_bp": 6500, "skill_cost_per_level": 7, "grade2_cost": 30, "grade3_cost": 60, "grade4_cost": 120, "grade5_cost": 240},
+    {"rarity": "legend", "draw_weight": 100, "dup_shards": 100, "skill_coef_bp": 8000, "skill_cost_per_level": 10, "grade2_cost": 40, "grade3_cost": 80, "grade4_cost": 160, "grade5_cost": 320}
+  ]
+}
