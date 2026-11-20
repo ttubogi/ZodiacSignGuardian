@@ -1,4 +1,5 @@
 rarity,draw_weight,dup_shards,skill_coef_bp,skill_cost_per_level,grade2_cost,grade3_cost,grade4_cost,grade5_cost
 common,7000,5,3000,2,10,20,40,80
-rare,2500,20,5000,5,20,40,80,160
-legend,500,100,8000,10,40,80,160,320
+rare,2000,20,5000,5,20,40,80,160
+hero,900,50,6500,7,30,60,120,240
+legend,100,100,8000,10,40,80,160,320

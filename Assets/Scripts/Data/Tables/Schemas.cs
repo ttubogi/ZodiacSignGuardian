@@ -16,7 +16,7 @@ namespace ZodiacSignGuardian.Data.Tables
         public static readonly string[] Weekdays = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
         public static readonly string[] Elements = { "wood", "fire", "earth", "metal", "water" };
         /// <summary>별 희귀도. 이 순서가 뽑기에서 확률 구간을 쌓는 순서다(설계서 v0.12 3절 "한 번 뽑기").</summary>
-        public static readonly string[] RarityIds = { "common", "rare", "legend" };
+        public static readonly string[] RarityIds = { "common", "rare", "hero", "legend" };
 
         /// <summary>비용·별조각·보상 수량 칸의 상한 (설계서 v0.12 2절 열 범위). Core가 곱셈에서 넘치지 않게 한다.</summary>
         public const long MaxAmount = 1000000000;

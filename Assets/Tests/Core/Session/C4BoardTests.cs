@@ -305,7 +305,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
         }
 
         [Test]
-        public void 후보_15개와_표의_끝값에서도_넘치지_않고_따로_계산과_같다()
+        public void 후보_12개와_표의_끝값에서도_넘치지_않고_따로_계산과_같다()
         {
             // skill_coef_bp 100000, skill_step_bp 10000, max_skill_level 1000, 연결 보너스 10000 (설계서 v0.12 열 범위의 끝)
             var t = Texts()
@@ -313,7 +313,8 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 .Replace("star_rules", "gold,100,900,1,shard,30,1000,200,2000,3000,1000", "gold,100,900,1,shard,1000,10000,200,10000,10000,1000");
             var h = New(t);
             h.S.SetChapterForTest(2);
-            foreach (var s in h.S.StarDefinitions) Own(h, s.StarId);
+            // 전설 5 + 희귀 5 + 영웅 2 = 12개 (따로 계산이 모든 경우를 훑으므로 테스트 시간을 위해 줄임. 60종 전체는 C4StarCountTests)
+            foreach (var s in h.S.StarDefinitions.Where(s => s.StarId.EndsWith("_3") || s.StarId.EndsWith("_2") || s.StarId == "wood_5" || s.StarId == "fire_5")) Own(h, s.StarId);
             var json = h.S.CreateSave().Json;
             foreach (var s in h.S.OwnedStars.Where(s => s.StarId.EndsWith("_3")))
             {
@@ -327,52 +328,33 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(Slots(h, 2), Is.EqualTo(Reference(h, 2, h.S.OwnedStars.ToList())));
         }
 
-        /// <summary>
-        /// 따로 쓴 기준 계산: 후보로 칸 5개를 채우는 모든 경우(빈 칸 포함)를 만들고 (점수 내림차순, 칸마다 star_id 오름차순·빈 칸 마지막)으로 정렬해 첫째.
-        /// 점수는 BigInteger로 계산해 넘침과 상관없이 맞다. 연결은 상생 쌍 목록을 따로 둔다.
-        /// </summary>
         /// <summary>빈 칸의 정렬 키: 어떤 star_id보다 뒤 (문자 0xFFFF, 숫자로 써서 파일에 보이지 않는 문자를 넣지 않음).</summary>
-        static readonly string Empty = ((char)0xFFFF).ToString();
+        internal static readonly string Empty = ((char)0xFFFF).ToString();
 
-        static long[] Reference(C3Harness h, int chapter, List<OwnedStar> candidates)
+        /// <summary>
+        /// 따로 쓴 기준 계산: 후보로 칸 5개를 채우는 모든 경우(빈 칸 포함)를 훑어 (점수 큰 것, 같으면 칸마다 star_id 작은 것·빈 칸 마지막)의 첫째.
+        /// 점수는 BigInteger로 계산해 넘침과 상관없이 맞다. 모든 경우를 쌓지 않고 가장 좋은 것만 남긴다.
+        /// </summary>
+        internal static long[] Reference(C3Harness h, int chapter, List<OwnedStar> candidates)
         {
-            var defs = h.S.StarDefinitions.ToDictionary(s => s.StarId);
-            var rules = h.S.StarSettings;
-            var coef = new Dictionary<Rarity, long>();
-            foreach (var line in h.T[ZodiacSignGuardian.Data.Tables.Schemas.Rarities].Rows)
-            {
-                coef[(Rarity)Array.IndexOf(ZodiacSignGuardian.Data.Tables.Schemas.RarityIds, line.Str("rarity"))] = line.Long("skill_coef_bp");
-            }
-            var links = Board(h, chapter).Links;
-            var pairs = new HashSet<string> { "wood>fire", "fire>earth", "earth>metal", "metal>water", "water>wood" };
-            string El(OwnedStar s) => defs[s.StarId].Element.ToString().ToLowerInvariant();
-            long LinkBp(OwnedStar a, OwnedStar b)
-            {
-                if (El(a) == El(b)) return rules.LinkSameBp;
-                return pairs.Contains(El(a) + ">" + El(b)) || pairs.Contains(El(b) + ">" + El(a)) ? rules.LinkGenerateBp : 0;
-            }
             var place = Math.Min(5, candidates.Count);
-            var best = new List<(System.Numerics.BigInteger score, string[] key, long[] slots)>();
+            System.Numerics.BigInteger bestScore = -1;
+            string[] bestKey = null;
+            long[] bestSlots = null;
+            var score = Scorer(h, chapter);
             void Go(int slot, OwnedStar?[] pick, HashSet<long> used)
             {
                 if (slot == 5)
                 {
                     if (pick.Count(p => p != null) != place) return;
-                    System.Numerics.BigInteger score = 0;
-                    for (var i = 0; i < 5; i++)
+                    var sc = score(pick);
+                    var key = pick.Select(p => p == null ? Empty : p.Value.StarId).ToArray();
+                    if (sc > bestScore || (sc == bestScore && KeyBefore(key, bestKey)))
                     {
-                        if (pick[i] == null) continue;
-                        var s = pick[i].Value;
-                        long bonus = 0;
-                        foreach (var l in links)
-                        {
-                            var other = l.SlotA == i + 1 ? pick[l.SlotB - 1] : l.SlotB == i + 1 ? pick[l.SlotA - 1] : null;
-                            if (other != null) bonus += LinkBp(s, other.Value);
-                        }
-                        var power = new System.Numerics.BigInteger(coef[defs[s.StarId].Rarity]) * (10000 + (long)rules.SkillStepBp * (s.SkillLevel - 1));
-                        score += power * (10000 + bonus);
+                        bestScore = sc;
+                        bestKey = key;
+                        bestSlots = pick.Select(p => p?.InstanceId ?? 0).ToArray();
                     }
-                    best.Add((score, pick.Select(p => p == null ? Empty : p.Value.StarId).ToArray(), pick.Select(p => p?.InstanceId ?? 0).ToArray()));
                     return;
                 }
                 foreach (var c in candidates)
@@ -387,18 +369,58 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 Go(slot + 1, pick, used);
             }
             Go(0, new OwnedStar?[5], new HashSet<long>());
-            var max = best.Max(b => b.score);
-            return best.Where(b => b.score == max)
-                .OrderBy(b => b.key, Comparer<string[]>.Create((x, y) =>
+            return bestSlots;
+        }
+
+        /// <summary>칸마다 star_id(빈 칸은 Empty)로 앞서는지. 칸 1부터 서수 비교.</summary>
+        internal static bool KeyBefore(string[] x, string[] y)
+        {
+            if (y == null) return true;
+            for (var i = 0; i < 5; i++)
+            {
+                var c = string.CompareOrdinal(x[i], y[i]);
+                if (c != 0) return c < 0;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 배치 하나의 점수를 따로 계산하는 함수(BigInteger). 별의 힘은 표의 skill_coef_bp × (10000 + skill_step_bp × (레벨 − 1)),
+        /// 칸마다 × (10000 + 그 칸에 닿은 켜진 선의 bp 합). 상생 쌍 목록은 Core와 따로 적는다.
+        /// </summary>
+        internal static Func<OwnedStar?[], System.Numerics.BigInteger> Scorer(C3Harness h, int chapter)
+        {
+            var defs = h.S.StarDefinitions.ToDictionary(s => s.StarId);
+            var rules = h.S.StarSettings;
+            var coef = new Dictionary<string, long>();
+            foreach (var line in h.T[ZodiacSignGuardian.Data.Tables.Schemas.Rarities].Rows) coef[line.Str("rarity")] = line.Long("skill_coef_bp");
+            var rarityId = new Dictionary<Rarity, string> { [Rarity.Common] = "common", [Rarity.Rare] = "rare", [Rarity.Hero] = "hero", [Rarity.Legend] = "legend" };
+            var links = Board(h, chapter).Links;
+            var pairs = new HashSet<string> { "wood>fire", "fire>earth", "earth>metal", "metal>water", "water>wood" };
+            string El(OwnedStar s) => defs[s.StarId].Element.ToString().ToLowerInvariant();
+            long LinkBp(OwnedStar a, OwnedStar b)
+            {
+                if (El(a) == El(b)) return rules.LinkSameBp;
+                return pairs.Contains(El(a) + ">" + El(b)) || pairs.Contains(El(b) + ">" + El(a)) ? rules.LinkGenerateBp : 0;
+            }
+            return pick =>
+            {
+                System.Numerics.BigInteger score = 0;
+                for (var i = 0; i < 5; i++)
                 {
-                    for (var i = 0; i < 5; i++)
+                    if (pick[i] == null) continue;
+                    var s = pick[i].Value;
+                    long bonus = 0;
+                    foreach (var l in links)
                     {
-                        var c = string.CompareOrdinal(x[i], y[i]);
-                        if (c != 0) return c;
+                        var other = l.SlotA == i + 1 ? pick[l.SlotB - 1] : l.SlotB == i + 1 ? pick[l.SlotA - 1] : null;
+                        if (other != null) bonus += LinkBp(s, other.Value);
                     }
-                    return 0;
-                }))
-                .First().slots;
+                    var power = new System.Numerics.BigInteger(coef[rarityId[defs[s.StarId].Rarity]]) * (10000 + (long)rules.SkillStepBp * (s.SkillLevel - 1));
+                    score += power * (10000 + bonus);
+                }
+                return score;
+            };
         }
     }
 }

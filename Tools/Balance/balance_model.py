@@ -19,17 +19,20 @@ P = dict(
     crit_step=0.005, crit_max_lv=100, crit_cost0=50.0, crit_cost_ratio=1.10,
     cdmg0=1.5, cdmg_step=0.02, cdmg_max_lv=100, cdmg_cost0=50.0, cdmg_cost_ratio=1.09,
     # 별
-    skill_mul={'common': 0.3, 'rare': 0.5, 'legend': 0.8},
+    skill_mul={'common': 0.3, 'rare': 0.5, 'hero': 0.65, 'legend': 0.8},
+    rarities=('common', 'rare', 'hero', 'legend'),
+    per_rarity=3,                      # 속성마다 희귀도별 별 수 (2026-11-20: 60종 = 5속성 × 4희귀도 × 3)
+    # own_bonus: 별 60종이면 0.02(등급 합 × 2%)로는 3장 보스가 중간값 10일째(목표 16일). 0.008이면 16일 (2026-11-20 계산, 값은 C5에서 정함)
     grade_step=0.0, own_bonus=0.02, board_complete=0.10, link_avg=0.35,
-    rate={'common': 7000, 'rare': 2500, 'legend': 500},
+    rate={'common': 7000, 'rare': 2000, 'hero': 900, 'legend': 100},
     draw_cost=100, draw10_cost=900, free_per_day=1,
-    dup_shard={'common': 5, 'rare': 20, 'legend': 100},
-    grade_cost={'common': [10, 20, 40, 80], 'rare': [20, 40, 80, 160], 'legend': [40, 80, 160, 320]},
+    dup_shard={'common': 5, 'rare': 20, 'hero': 50, 'legend': 100},
+    grade_cost={'common': [10, 20, 40, 80], 'rare': [20, 40, 80, 160], 'hero': [30, 60, 120, 240], 'legend': [40, 80, 160, 320]},
     # 은하수정
     mission_gems=1750, attend_gems=400, attend_star_days={7: 'rare', 14: 'rare', 21: 'rare', 28: 'legend'},
     boss_first_gems=2000, stage_first_gems=300,
     # 스킬 레벨 (B3: 등급과 따로)
-    skill_lv_max=30, skill_lv_step=0.10, skill_cost_base={'common': 2, 'rare': 5, 'legend': 10},
+    skill_lv_max=30, skill_lv_step=0.10, skill_cost_base={'common': 2, 'rare': 5, 'hero': 7, 'legend': 10},
     # 지팡이 (C5 가안)
     first_session_min=15,
     pouch_kills=600, staff_grade_p=[5000, 3000, 1500, 400, 100], staff_step=0.5,
@@ -39,6 +42,10 @@ PLAYERS = {
     'busy': dict(name='바쁜 플레이어', sessions=[(8*60, 3), (12*60+30, 5), (19*60, 5), (23*60, 3)]),
     'idle': dict(name='켜두는 플레이어', sessions=[(8*60, 10), (12*60, 60), (18*60, 120), (22*60, 30)]),
 }
+
+
+def total_stars():
+    return 5 * P['per_rarity'] * len(P['rarities'])
 
 
 def stage_hp(g):
@@ -71,6 +78,7 @@ class Player:
         self.pouch = 0
         self.staff = 0            # 0 = 없음, 1~5
         self.log = []
+        self.complete_day = None
 
     # ---------- 전투력 ----------
     def atk(self):
@@ -116,11 +124,15 @@ class Player:
     def draw(self, n):
         for _ in range(n):
             x = self.rng.randrange(10000)
-            r = 'common' if x < P['rate']['common'] else 'rare' if x < P['rate']['common'] + P['rate']['rare'] else 'legend'
-            self.give_star(r, self.rng.randrange(5))
+            acc = 0
+            for r in P['rarities']:
+                acc += P['rate'][r]
+                if x < acc:
+                    break
+            self.give_star(r, self.rng.randrange(5 * P['per_rarity']))
 
-    def give_star(self, rarity, elem):
-        sid = (rarity, elem)
+    def give_star(self, rarity, idx):
+        sid = (rarity, idx)
         if sid in self.stars:
             self.shards += P['dup_shard'][rarity]
         else:
@@ -176,7 +188,7 @@ class Player:
         self.gems += P['mission_gems']
         att = (day - 1) % 28 + 1
         if att in P['attend_star_days']:
-            self.give_star(P['attend_star_days'][att], self.rng.randrange(5))
+            self.give_star(P['attend_star_days'][att], self.rng.randrange(5 * P['per_rarity']))
         else:
             self.gems += P['attend_gems']
         self.draw(P['free_per_day'])
@@ -263,6 +275,8 @@ def run(kind, days=30, seed=1, ad_offline=False):
             pl.hunt(minutes * 60, (day, i))
             pl.spend()
             last_leave = now + minutes
+        if pl.complete_day is None and len(pl.stars) == total_stars():
+            pl.complete_day = day
         rows.append(dict(day=day, stage=pl.g, cleared=pl.chapter_cleared, atk_lv=pl.atk_lv,
                          stars=len(pl.stars), dps=pl.dps(), staff=pl.staff,
                          grades=sum(g for _, g in pl.stars.values())))

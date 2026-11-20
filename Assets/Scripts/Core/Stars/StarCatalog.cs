@@ -18,7 +18,9 @@ namespace ZodiacSignGuardian.Core.Stars
     {
         Common = 0,
         Rare = 1,
-        Legend = 2,
+        /// <summary>영웅 (2026-11-20 추가: 일반·희귀·영웅·전설).</summary>
+        Hero = 2,
+        Legend = 3,
     }
 
     /// <summary>별 정의 하나 (stars.csv의 지금 빌드 행).</summary>

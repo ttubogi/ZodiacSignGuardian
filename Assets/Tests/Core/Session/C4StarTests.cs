@@ -260,6 +260,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(counts[Rarity.Common] / 20000.0, Is.EqualTo(0.70).Within(0.01));
             Assert.That(counts[Rarity.Rare] / 20000.0, Is.EqualTo(0.25).Within(0.01));
             Assert.That(counts[Rarity.Legend] / 20000.0, Is.EqualTo(0.05).Within(0.01));
+            Assert.That(counts.ContainsKey(Rarity.Hero), Is.False, "테스트 표의 영웅 확률은 0");
             h.AssertNoViolations();
         }
 

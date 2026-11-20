@@ -21,7 +21,7 @@ namespace ZodiacSignGuardian.Data.Tables
         Check6 = 6,
         /// <summary>7. m1 행은 m1에 없는 것을 가리키지 않는다.</summary>
         Check7 = 7,
-        /// <summary>8. 별 속성은 다섯 가지 중 하나이고, m1에는 속성마다 3종씩 15종이 있으며, 속성마다 희귀도(일반·희귀·전설)가 하나씩이다.</summary>
+        /// <summary>8. 별 속성은 다섯 가지 중 하나이고, 희귀도는 일반·희귀·영웅·전설 중 하나이며, m1에서 속성 × 희귀도 칸마다 별 수가 모두 같고 1 이상이다.</summary>
         Check8 = 8,
         /// <summary>9. 판마다 칸 1~5가 모두 이어져 있고, 같은 선의 중복·자기 연결이 없다.</summary>
         Check9 = 9,

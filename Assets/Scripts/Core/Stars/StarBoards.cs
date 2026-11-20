@@ -230,51 +230,114 @@ namespace ZodiacSignGuardian.Core.Stars
         /// <summary>
         /// AutoArrange의 결과 배치. 후보(다른 판에 놓이지 않은 별 + 이 판의 별)에서 ∑ 별의 힘 × (10000 + 그 별의 연결 보너스 bp)가 가장 큰 배치.
         /// 후보가 5개 이상이면 다섯 칸을 모두, 적으면 후보를 모두 놓는다. 같은 점수면 칸 1부터 차례로 star_id가 작은 별(빈 칸은 가장 뒤)인 배치.
-        /// 후보를 star_id 순서로 세우고 칸 1부터 '작은 것 먼저' 순서로 모두 훑어, 점수가 더 클 때만 바꾸면 같은 점수 중 첫 배치가 남는다.
-        /// 후보는 최대 별 종류 수(15)라 경우는 최대 15×14×13×12×11 = 360,360가지.
+        /// <para>
+        /// 모든 배치를 훑지 않고 같은 답을 낸다 (2026-11-20, 별 60종이면 모든 배치가 약 6.5억 가지라 바꿈).
+        /// 1) 속성마다 (힘 내림차순, star_id 오름차순)으로 앞 5개만 남긴다. 답에 그 밖의 별 X가 있으면, 같은 속성에서 쓰이지 않은 남긴 별 Y가
+        ///    있다(칸이 5개뿐). Y의 힘이 더 크면 X 자리에 Y를 넣어 점수가 커지고(칸 배율 ≥ 10000, 힘 &gt; 0), 같으면 star_id가 더 작아 같은 점수에서 앞선다.
+        ///    연결 보너스는 속성으로만 정해지므로 바꿔 넣어도 변하지 않는다.
+        /// 2) 칸마다 속성(또는 빈 칸)을 정한 '모양' 6^5 = 7,776가지를 훑는다. 모양이 정해지면 칸마다 배율(10000 + 보너스)이 정해지고,
+        ///    속성마다 그 속성 칸에 남긴 별 중 앞의 것들을 배율이 큰 칸부터 힘이 큰 순서로 놓는 것이 가장 크다(재배열 부등식).
+        /// 3) 같은 모양 안에서 같은 점수인 배치는, 배율이 같은 칸 묶음마다 받는 힘의 모음이 정해져 있다. 칸 1부터 그 모음에 맞는 별 중
+        ///    star_id가 가장 작은 별을 고르면 그 모양에서 가장 앞선 배치다. 모양마다의 답 중 (점수, 칸 1부터 star_id)로 가장 앞선 것을 고른다.
+        /// 따로 쓴 '모든 경우 비교'와 같은지는 테스트가 대조한다(C4BoardTests).
+        /// </para>
         /// </summary>
         public long[] BestArrangement(int chapter, IReadOnlyList<OwnedStar> candidates)
         {
+            const int ElementCount = 5;
+            const int EmptyCell = ElementCount;          // 모양에서 빈 칸
+            const int KeepPerElement = SlotCount;
             var def = Definition(chapter);
-            var sorted = new List<OwnedStar>(candidates);
-            sorted.Sort((x, y) => string.CompareOrdinal(x.StarId, y.StarId));
-            var n = sorted.Count;
-            var place = Math.Min(n, SlotCount);
-            var power = new long[n];
-            var element = new Element[n];
-            for (var i = 0; i < n; i++)
+
+            // 1) 속성마다 앞 5개
+            var groups = new List<(OwnedStar star, long power)>[ElementCount];
+            for (var e = 0; e < ElementCount; e++) groups[e] = new List<(OwnedStar, long)>();
+            foreach (var c in candidates) groups[(int)_catalog.Find(c.StarId).Element].Add((c, Power(c)));
+            var kept = new List<(OwnedStar star, long power, int element)>();
+            for (var e = 0; e < ElementCount; e++)
             {
-                power[i] = Power(sorted[i]);
-                element[i] = _catalog.Find(sorted[i].StarId).Element;
+                groups[e].Sort((x, y) => x.power != y.power ? y.power.CompareTo(x.power) : string.CompareOrdinal(x.star.StarId, y.star.StarId));
+                for (var i = 0; i < groups[e].Count && i < KeepPerElement; i++) kept.Add((groups[e][i].star, groups[e][i].power, e));
             }
-            var linkBp = new Dictionary<LinkKind, long> { [LinkKind.Same] = _catalog.Rules.LinkSameBp, [LinkKind.Generate] = _catalog.Rules.LinkGenerateBp };
+            // 순위 = 남긴 별을 star_id 순서로 세운 번호. 빈 칸은 가장 뒤.
+            kept.Sort((x, y) => string.CompareOrdinal(x.star.StarId, y.star.StarId));
+            var n = kept.Count;
+            var place = Math.Min(n, SlotCount);
+            const int EmptyRank = int.MaxValue;
+            // 속성마다 남긴 별의 순위를 (힘 내림차순, 순위 오름차순)으로
+            var byElement = new List<int>[ElementCount];
+            for (var e = 0; e < ElementCount; e++) byElement[e] = new List<int>();
+            for (var r = 0; r < n; r++) byElement[kept[r].element].Add(r);
+            for (var e = 0; e < ElementCount; e++) byElement[e].Sort((a, b) => kept[a].power != kept[b].power ? kept[b].power.CompareTo(kept[a].power) : a.CompareTo(b));
 
-            var pick = new int[SlotCount];       // 칸마다 후보 번호, -1은 빈 칸
-            var used = new bool[n];
-            int[] best = null;
+            var linkBp = new long[3]; // LinkKind 숫자(Same = 1, Generate = 2)로 찾는다
+            linkBp[(int)LinkKind.Same] = _catalog.Rules.LinkSameBp;
+            linkBp[(int)LinkKind.Generate] = _catalog.Rules.LinkGenerateBp;
+
+            var shape = new int[SlotCount];
+            var used = new int[ElementCount];
+            var mult = new long[SlotCount];
+            var ranks = new int[SlotCount];
+            var bestRanks = new int[SlotCount];
             long bestScore = -1;
+            var taken = new bool[n];
+            var consumed = new bool[ElementCount][];
+            for (var e = 0; e < ElementCount; e++) consumed[e] = new bool[SlotCount];
 
-            void Score()
+            void Evaluate()
             {
-                var bonus = new long[SlotCount];
+                for (var s = 0; s < SlotCount; s++) mult[s] = 10000;
                 foreach (var l in def.Links)
                 {
-                    int a = pick[l.SlotA - 1], b = pick[l.SlotB - 1];
-                    if (a < 0 || b < 0) continue;
-                    var kind = StarCatalog.LinkOf(element[a], element[b]);
+                    int a = shape[l.SlotA - 1], b = shape[l.SlotB - 1];
+                    if (a == EmptyCell || b == EmptyCell) continue;
+                    var kind = StarCatalog.LinkOf((Element)a, (Element)b);
                     if (kind == null) continue;
-                    bonus[l.SlotA - 1] += linkBp[kind.Value];
-                    bonus[l.SlotB - 1] += linkBp[kind.Value];
+                    mult[l.SlotA - 1] += linkBp[(int)kind.Value];
+                    mult[l.SlotB - 1] += linkBp[(int)kind.Value];
                 }
+                // 점수: 속성마다 그 속성 칸을 배율 내림차순으로, 앞의 별을 힘 내림차순으로 짝짓는다
                 long score = 0;
+                var slotsOf = new List<int>[ElementCount];
+                for (var e = 0; e < ElementCount; e++)
+                {
+                    if (used[e] == 0) continue;
+                    var slots = new List<int>();
+                    for (var s = 0; s < SlotCount; s++) if (shape[s] == e) slots.Add(s);
+                    slots.Sort((x, y) => mult[y].CompareTo(mult[x]));
+                    for (var i = 0; i < slots.Count; i++) score += kept[byElement[e][i]].power * mult[slots[i]];
+                    slotsOf[e] = slots;
+                }
+                if (score < bestScore) return;
+                // 같은 모양에서 가장 앞선 배치: 칸 1부터, 그 칸의 배율 묶음이 받을 힘에 맞는 별 중 순위가 가장 작은 별
+                // 짝지은 자리 i(배율 내림차순 i번째 칸이 받는 힘)를 묶음에서 하나씩 지운다. 같은 힘의 별끼리는 바꿔도 점수가 같다.
+                Array.Clear(taken, 0, n);
+                for (var e = 0; e < ElementCount; e++) if (used[e] > 0) Array.Clear(consumed[e], 0, SlotCount);
                 for (var s = 0; s < SlotCount; s++)
                 {
-                    if (pick[s] >= 0) score += power[pick[s]] * (10000 + bonus[s]);
+                    var e = shape[s];
+                    if (e == EmptyCell) { ranks[s] = EmptyRank; continue; }
+                    var slots = slotsOf[e];
+                    int choice = -1, choicePos = -1;
+                    for (var i = 0; i < slots.Count; i++)
+                    {
+                        if (consumed[e][i] || mult[slots[i]] != mult[s]) continue;
+                        var want = kept[byElement[e][i]].power; // 이 배율 묶음이 아직 받을 힘 하나
+                        for (var j = 0; j < slots.Count; j++)
+                        {
+                            var q = byElement[e][j];
+                            if (taken[q] || kept[q].power != want) continue;
+                            if (choice < 0 || q < choice) { choice = q; choicePos = i; }
+                        }
+                    }
+                    taken[choice] = true;
+                    consumed[e][choicePos] = true;
+                    ranks[s] = choice;
                 }
-                if (score > bestScore)
+                if (score > bestScore || Earlier(ranks, bestRanks))
                 {
                     bestScore = score;
-                    best = (int[])pick.Clone();
+                    Array.Copy(ranks, bestRanks, SlotCount);
                 }
             }
 
@@ -282,27 +345,35 @@ namespace ZodiacSignGuardian.Core.Stars
             {
                 if (slot == SlotCount)
                 {
-                    if (placed == place) Score();
+                    if (placed == place) Evaluate();
                     return;
                 }
-                // 남은 칸에 남은 별을 다 놓을 수 없으면 그만
-                if (place - placed > SlotCount - slot) return;
-                for (var i = 0; i < n; i++)
+                if (place - placed > SlotCount - slot) return; // 남은 칸에 다 놓을 수 없음
+                for (var e = 0; e < ElementCount; e++)
                 {
-                    if (used[i] || placed == place) continue;
-                    used[i] = true;
-                    pick[slot] = i;
+                    if (placed == place || used[e] == byElement[e].Count) continue;
+                    used[e]++;
+                    shape[slot] = e;
                     Fill(slot + 1, placed + 1);
-                    used[i] = false;
+                    used[e]--;
                 }
-                pick[slot] = -1; // 빈 칸은 가장 뒤
+                shape[slot] = EmptyCell;
                 Fill(slot + 1, placed);
             }
 
             Fill(0, 0);
             var result = new long[SlotCount];
-            for (var s = 0; s < SlotCount; s++) result[s] = best[s] < 0 ? 0 : sorted[best[s]].InstanceId;
+            for (var s = 0; s < SlotCount; s++) result[s] = bestRanks[s] == EmptyRank ? 0 : kept[bestRanks[s]].star.InstanceId;
             return result;
+        }
+
+        static bool Earlier(int[] a, int[] b)
+        {
+            for (var i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return a[i] < b[i];
+            }
+            return false;
         }
 
         // ---- 저장 ----

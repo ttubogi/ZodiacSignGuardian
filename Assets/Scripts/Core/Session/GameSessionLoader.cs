@@ -58,7 +58,7 @@ namespace ZodiacSignGuardian.Core.Session
 
         static readonly Dictionary<string, Rarity> RarityIds = new Dictionary<string, Rarity>(StringComparer.Ordinal)
         {
-            ["common"] = Rarity.Common, ["rare"] = Rarity.Rare, ["legend"] = Rarity.Legend,
+            ["common"] = Rarity.Common, ["rare"] = Rarity.Rare, ["hero"] = Rarity.Hero, ["legend"] = Rarity.Legend,
         };
 
         /// <summary>

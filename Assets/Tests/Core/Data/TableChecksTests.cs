@@ -203,7 +203,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                 .Replace("stars", "wood_4,wood,common,wood 4,v1", "wood_4,,common,wood 4,v1")
                 .Replace("stars", "fire_3,fire,legend,fire 3,m1\n", ""));
             // element 칸의 형식 문제도 검사 8로 표시되므로, 개수 문구로 구분한다
-            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check8 && i.Message.StartsWith("m1 별은 속성마다") && i.Message.Contains("fire 2")), Is.True, Describe(issues));
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check8 && i.Message.StartsWith("m1 별은 속성·희귀도마다") && i.Message.Contains("fire 1/1/1/0")), Is.True, Describe(issues));
         }
 
         [Test]
@@ -391,23 +391,59 @@ namespace ZodiacSignGuardian.Core.Tests.Data
         // ---- 8. 별 ----
 
         [Test]
-        public void 검사8_m1_별이_14종이면_잡는다()
+        public void 검사8_m1_별이_하나_빠지면_잡는다()
         {
             AssertOnly(Run(Good().Replace("stars", "water_3,water,legend,water 3,m1", "water_3,water,legend,water 3,v1")), TableIssueKind.Check8);
         }
 
         [Test]
-        public void 검사8_m1_별이_16종이면_잡는다()
+        public void 검사8_m1_별이_하나_많으면_잡는다()
         {
             AssertOnly(Run(Good().Replace("stars", "wood_4,wood,common,wood 4,v1", "wood_4,wood,common,wood 4,m1")), TableIssueKind.Check8);
         }
 
         [Test]
-        public void 검사8_합계_15종이어도_속성마다_3종이_아니면_잡는다()
+        public void 검사8_합계가_같아도_속성_희귀도_칸마다_같은_수가_아니면_잡는다()
         {
             var issues = Run(Good().Replace("stars", "water_3,water,", "water_3,fire,"));
             AssertOnly(issues, TableIssueKind.Check8);
-            Assert.That(issues[0].Message, Does.Contain("fire 4").And.Contain("water 2"));
+            // 희귀도 순서 common/rare/hero/legend
+            Assert.That(issues[0].Message, Does.Contain("fire 1/1/1/2").And.Contain("water 1/1/1/0"));
+        }
+
+        [Test]
+        public void 검사8_속성마다_희귀도_칸이_모두_2종이면_통과한다()
+        {
+            var t = Good();
+            foreach (var e in Schemas.Elements)
+            {
+                foreach (var (i, rarity) in new[] { (11, "common"), (12, "rare"), (13, "legend"), (15, "hero") })
+                {
+                    t = t.AppendRow("stars", e + "_" + i + "," + e + "," + rarity + "," + e + " " + i + ",m1");
+                }
+            }
+            Assert.That(Run(t), Is.Empty);
+        }
+
+        [Test]
+        public void 검사8_영웅이_모든_속성에서_빠지면_잡는다()
+        {
+            var t = Good();
+            foreach (var e in Schemas.Elements) t = t.Replace("stars", e + "_5," + e + ",hero," + e + " 5,m1", e + "_5," + e + ",hero," + e + " 5,v1");
+            var issues = Run(t);
+            AssertOnly(issues, TableIssueKind.Check8);
+            Assert.That(issues[0].Message, Does.Contain("wood 1/1/0/1"));
+        }
+
+        [Test]
+        public void 검사8_m1_별이_하나도_없으면_잡는다()
+        {
+            var t = Good();
+            var rows = t["stars.csv"].Split('\n').Where(l => l.EndsWith(",m1")).ToList();
+            foreach (var row in rows) t = t.Replace("stars", row, row.Substring(0, row.Length - 2) + "v1");
+            var issues = Run(t);
+            TestTables.AssertHas(issues, TableIssueKind.Check8);
+            Assert.That(issues.Any(i => i.Kind == TableIssueKind.Check8 && i.Message.Contains("wood 0/0/0/0")), Is.True, Describe(issues));
         }
 
         [Test]

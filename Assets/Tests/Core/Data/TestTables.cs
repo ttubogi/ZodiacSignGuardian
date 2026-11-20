@@ -19,7 +19,11 @@ namespace ZodiacSignGuardian.Core.Tests.Data
             var stars = new StringBuilder("star_id,element,rarity,name_ko,build\n");
             foreach (var e in Schemas.Elements)
             {
-                for (int i = 1; i <= 3; i++) stars.Append(e + "_" + i + "," + e + "," + Schemas.RarityIds[i - 1] + "," + e + " " + i + ",m1\n");
+                // _1 일반, _2 희귀, _3 전설, _5 영웅 (영웅은 2026-11-20에 더함. 앞 번호를 그대로 두어 기존 테스트가 흔들리지 않게)
+                foreach (var (i, rarity) in new[] { (1, "common"), (2, "rare"), (3, "legend"), (5, "hero") })
+                {
+                    stars.Append(e + "_" + i + "," + e + "," + rarity + "," + e + " " + i + ",m1\n");
+                }
             }
             stars.Append("wood_4,wood,common,wood 4,v1\n");
 
@@ -75,6 +79,7 @@ namespace ZodiacSignGuardian.Core.Tests.Data
                     "rarity,draw_weight,dup_shards,skill_coef_bp,skill_cost_per_level,grade2_cost,grade3_cost,grade4_cost,grade5_cost\n" +
                     "common,7000,5,3000,2,10,20,40,80\n" +
                     "rare,2500,20,5000,5,20,40,80,160\n" +
+                    "hero,0,50,6500,7,30,60,120,240\n" +
                     "legend,500,100,8000,10,40,80,160,320\n",
                 ["star_rules.csv"] =
                     "draw_currency,draw_cost,draw10_cost,free_draws_per_day,shard_currency,max_skill_level,skill_step_bp,own_bonus_bp,link_same_bp,link_generate_bp,board_complete_bp\n" +

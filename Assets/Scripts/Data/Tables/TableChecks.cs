@@ -253,8 +253,8 @@ namespace ZodiacSignGuardian.Data.Tables
             }
         }
 
-        // 8. m1에는 속성마다 3종씩 15종, 속성마다 희귀도가 하나씩. (속성·희귀도 이름은 칸을 읽을 때 검사)
-        public const int M1StarsPerElement = 3;
+        // 8. m1에서 속성 × 희귀도 칸마다 별 수가 모두 같고 1 이상. (속성·희귀도 이름은 칸을 읽을 때 검사)
+        //    2026-11-20 결정: 60종 = 5속성 × 4희귀도 × 3종. 3이라는 수는 표가 정하고, 검사는 '모든 칸이 같은 수'만 본다(★ Claude가 정함).
 
         static void Check8_Stars(TableSet set, List<TableIssue> issues)
         {
@@ -263,27 +263,23 @@ namespace ZodiacSignGuardian.Data.Tables
             // build가 m1이 아닌 것이 확실한 별의 칸은 m1 개수와 상관없으므로 건너뛰지 않는다 (Codex 검토 2026-11-16).
             if (t.Rows.Any(r => r.Build == null || (r.Build == Schemas.M1 && !r.IsValid("element")))) return;
             var m1 = t.Rows.Where(r => r.Build == Schemas.M1).ToList();
-            var wrong = Schemas.Elements
-                .Select(e => (element: e, count: m1.Count(r => r.Str("element") == e)))
-                .Where(x => x.count != M1StarsPerElement)
-                .ToList();
-            if (wrong.Count > 0 || m1.Count != Schemas.Elements.Length * M1StarsPerElement)
-            {
-                Add(issues, TableIssueKind.Check8, t.Schema.Name, 0, "element",
-                    "m1 별은 속성마다 " + M1StarsPerElement + "종이어야 함. 지금: " +
-                    string.Join(", ", Schemas.Elements.Select(e => e + " " + m1.Count(r => r.Str("element") == e))) + " (합계 " + m1.Count + ")");
-                return; // 개수가 틀리면 희귀도 짝은 같은 원인의 연쇄 문제가 된다
-            }
-            // m1에서 속성마다 희귀도(일반·희귀·전설)가 하나씩 (설계서 v0.12, 밸런스 기초 문서 6절). 희귀도를 못 읽은 m1 별이 있으면 셀 수 없다.
+            // 희귀도를 못 읽은 m1 별이 있으면 칸마다 셀 수 없다 (이미 형식 문제로 남음).
             if (m1.Any(r => !r.IsValid("rarity"))) return;
+            var counts = new List<(string element, string rarity, int count)>();
             foreach (var e in Schemas.Elements)
             {
-                var have = m1.Where(r => r.Str("element") == e).Select(r => r.Str("rarity")).OrderBy(x => System.Array.IndexOf(Schemas.RarityIds, x)).ToList();
-                if (!have.SequenceEqual(Schemas.RarityIds))
+                foreach (var rr in Schemas.RarityIds)
                 {
-                    Add(issues, TableIssueKind.Check8, t.Schema.Name, 0, "rarity",
-                        "m1 " + e + " 별은 희귀도 " + string.Join("·", Schemas.RarityIds) + "가 하나씩이어야 함. 지금: " + string.Join("·", have));
+                    counts.Add((e, rr, m1.Count(r => r.Str("element") == e && r.Str("rarity") == rr)));
                 }
+            }
+            var first = counts[0].count;
+            if (first < 1 || counts.Any(c => c.count != first))
+            {
+                Add(issues, TableIssueKind.Check8, t.Schema.Name, 0, "rarity",
+                    "m1 별은 속성·희귀도마다 같은 수(1 이상)여야 함. 지금: " +
+                    string.Join(", ", Schemas.Elements.Select(e => e + " " + string.Join("/", counts.Where(c => c.element == e).Select(c => c.count)))) +
+                    " (희귀도 순서 " + string.Join("/", Schemas.RarityIds) + ", 합계 " + m1.Count + ")");
             }
         }
 

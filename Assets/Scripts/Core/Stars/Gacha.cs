@@ -15,7 +15,7 @@ namespace ZodiacSignGuardian.Core.Stars
     }
 
     /// <summary>
-    /// 별 뽑기 (설계서 v0.12 "별 뽑기"). 한 번 뽑기: 뽑기 난수 흐름에서 NextInt(10000)으로 희귀도(common → rare → legend 순서로
+    /// 별 뽑기 (설계서 v0.12 "별 뽑기"). 한 번 뽑기: 뽑기 난수 흐름에서 NextInt(10000)으로 희귀도(common → rare → hero → legend 순서로
     /// draw_weight를 쌓은 구간), 이어서 그 희귀도의 별을 star_id 서수 순서로 세운 목록에서 NextInt(별 수)로 하나.
     /// 확률이 0인 희귀도는 구간이 비어 나오지 않는다.
     /// </summary>
