@@ -67,12 +67,18 @@ namespace ZodiacSignGuardian.Core.Stars
             else { Day = day; Used = 1; }
         }
 
-        /// <summary>저장한 값으로. day가 없으면 used는 0, 있으면 1~perDay. 틀리면 errors에 남기고 false.</summary>
-        public bool TryRestore(long? day, long used, int perDay, List<string> errors)
+        /// <summary>
+        /// 불러올 때 받아들이는 쓴 수의 상한 = 표 free_draws_per_day 열 범위의 상한(Data Schemas, 0~10).
+        /// 지금 표의 한도가 아니라 이 값으로 본다: 한도를 낮춘 표로 그보다 많이 쓴 저장도 불러오고 남은 수만 0이다 (설계서 v0.16 X7, 2026-11-22 사용자 결정).
+        /// </summary>
+        public const int MaxStoredUsed = 10;
+
+        /// <summary>저장한 값으로. day가 없으면 used는 0, 있으면 1~MaxStoredUsed. 틀리면 errors에 남기고 false.</summary>
+        public bool TryRestore(long? day, long used, List<string> errors)
         {
-            if (day == null ? used != 0 : used < 1 || used > perDay)
+            if (day == null ? used != 0 : used < 1 || used > MaxStoredUsed)
             {
-                errors.Add("freeDraw.used: " + used + "가 맞지 않음 (쓴 날이 없으면 0, 있으면 1~" + perDay + ")");
+                errors.Add("freeDraw.used: " + used + "가 맞지 않음 (쓴 날이 없으면 0, 있으면 1~" + MaxStoredUsed + ")");
                 return false;
             }
             Day = day;
