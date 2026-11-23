@@ -163,6 +163,41 @@ namespace ZodiacSignGuardian.Core.Tests.Session
             Assert.That(r.Errors.Any(e => e.StartsWith("freeDraw")), Is.False, string.Join("\n", r.Errors));
         }
 
+        [Test]
+        public void 시계를_읽지_못해도_쓴_수_자체의_오류는_따로_잡는다()
+        {
+            // Codex v0.16 검토 권고: 시계에 기대는 비교만 건너뛰고, 쓴 수 범위 검사는 그대로 한다
+            var json = R(SaveWithFreeUsed(1, 1), "\"used\": 1", "\"used\": 11");
+            var bad = System.Text.RegularExpressions.Regex.Replace(json, "\"syncElapsedUs\": \\d+", "\"syncElapsedUs\": -1");
+            Assert.That(bad, Is.Not.EqualTo(json));
+            var r = LoadRaw(FreePerDay(1), bad);
+            Assert.That(r.Ok, Is.False);
+            Assert.That(r.Errors.Any(e => e.StartsWith("clock")), Is.True, string.Join("\n", r.Errors));
+            Assert.That(r.Errors.Any(e => e.StartsWith("freeDraw.used")), Is.True, string.Join("\n", r.Errors));
+            Assert.That(r.Errors.Any(e => e.StartsWith("freeDraw.day")), Is.False, string.Join("\n", r.Errors));
+        }
+
+        [Test]
+        public void 무료를_쓴_뒤_서버가_이전_날로_보정된_저장도_처리한_날_기준으로_불러온다()
+        {
+            // Codex v0.16 검토 권고: 비교 기준은 지금 추정한 날짜가 아니라 처리한 일일 구간이다
+            var h = New(FreePerDay(1));
+            h.Sync(T0 + Day);                                  // 다음 날 처리
+            h.Ok(h.S.DrawStar(1, DrawPayment.Free));           // 그날 무료 1번
+            h.Sync(T0);                                        // 서버가 하루 뒤로 감 → TimeWentBack
+            h.AssertFailsUnchanged(() => h.S.DrawStar(1, DrawPayment.Free), ErrorCode.TimeWentBack);
+            var json = h.S.CreateSave().Json;
+
+            var h2 = LoadWith(FreePerDay(1), json);
+            Assert.That(h2.S.FreeDrawsLeftToday, Is.EqualTo(0), "처리한 날(쓴 날)의 값");
+            h2.Sync(T0);
+            h2.AssertFailsUnchanged(() => h2.S.DrawStar(1, DrawPayment.Free), ErrorCode.TimeWentBack);
+            h2.Sync(T0 + Day + Min);                           // 따라잡아도 같은 날이면 다 씀
+            h2.AssertFailsUnchanged(() => h2.S.DrawStar(1, DrawPayment.Free), ErrorCode.AlreadyClaimed);
+            h2.Sync(T0 + 2 * Day);                             // 그다음 날은 다시 1
+            Assert.That(h2.S.FreeDrawsLeftToday, Is.EqualTo(1));
+        }
+
         // ---- ② Codex C4 검토 권고 ----
 
         static string[] DrawnIds(IEnumerable<GameEvent> events) =>
