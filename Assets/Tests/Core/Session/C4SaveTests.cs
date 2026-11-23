@@ -126,7 +126,7 @@ namespace ZodiacSignGuardian.Core.Tests.Session
                 ("판 키 int 밖", j => R(j, Board2, "\"2147483648\": [0, 0, 0, 0, 0]")),
                 ("판 키 같은 것 둘", j => R(j, Board2, Board1)),
                 ("boards 없음", j => System.Text.RegularExpressions.Regex.Replace(j, ", \"boards\": \\{[^}]*\\}", "")),
-                ("무료 2번 (하루 1번)", j => R(j, "\"used\": 1", "\"used\": 2")),
+                ("무료 11번 (표 열 범위 상한 10)", j => R(j, "\"used\": 1", "\"used\": 11")),
                 ("무료 음수", j => R(j, "\"used\": 1", "\"used\": -1")),
                 ("무료 쓴 날 없는데 1", j => System.Text.RegularExpressions.Regex.Replace(j, "\"freeDraw\": \\{\"day\": \\d+", "\"freeDraw\": {\"day\": null")),
                 ("무료 쓴 날 0번", j => R(j, "\"used\": 1", "\"used\": 0")),

@@ -91,7 +91,8 @@ namespace ZodiacSignGuardian.Core.Session
             }
             if (errors.Count == 0 && !wallet.TryRestore(balances)) errors.Add("wallet: 음수 잔액");
 
-            if (!clock.TryRestore(d.AnchorUtcMs, d.SyncElapsedUs, d.ProcessedDay, d.ProcessedWeek)) errors.Add("clock: 값이 맞지 않음 (기준 시각 범위, 음수 누적, 기준 시각 없는 구간)");
+            var clockOk = clock.TryRestore(d.AnchorUtcMs, d.SyncElapsedUs, d.ProcessedDay, d.ProcessedWeek);
+            if (!clockOk) errors.Add("clock: 값이 맞지 않음 (기준 시각 범위, 음수 누적, 기준 시각 없는 구간)");
             var battle = new BattleAccumulator();
             if (!battle.TryRestore(d.BattlePendingUs)) errors.Add("clock.battlePendingUs: 0 이상 " + BattleAccumulator.TickUs + " 미만이어야 함");
             if (!GameRng.TryFromSaveStrings(d.Rng, out var rng)) errors.Add("rng: 16진수 소문자 16자리 12개, 흐름마다 모두 0이 아니어야 함");
@@ -121,8 +122,12 @@ namespace ZodiacSignGuardian.Core.Session
                 foreach (var kv in d.Boards) boards[(int)kv.Key] = kv.Value; // 키는 SaveFormat이 1~int 범위로 읽음
                 parts.Boards.TryRestore(boards, parts.Stars, (int)d.Chapter, errors);
             }
+            // 무료 뽑기는 처리한 일일 구간에만 쓰고 처리한 구간은 뒤로 가지 않으므로, 쓴 구간은 처리한 구간 이하다 (설계서 v0.16 X7).
+            // 시계를 읽지 못했으면 처리한 구간과의 비교는 연쇄 문제가 되므로 건너뛴다 (이미 오류로 남음)
             if (d.FreeDrawDay != null && !clock.IsPossibleDay(d.FreeDrawDay.Value)) errors.Add("freeDraw.day: 범위 밖");
-            else parts.FreeDraws.TryRestore(d.FreeDrawDay, d.FreeDrawUsed, parts.Catalog.Rules.FreeDrawsPerDay, errors);
+            else if (clockOk && d.FreeDrawDay != null && (clock.ProcessedDay == null || d.FreeDrawDay.Value > clock.ProcessedDay.Value))
+                errors.Add("freeDraw.day: 처리한 일일 구간보다 뒤이거나 처리한 구간이 없음");
+            else parts.FreeDraws.TryRestore(d.FreeDrawDay, d.FreeDrawUsed, errors);
             // 스테이지·떠날 때 스테이지는 지금 빌드의 스테이지 표에 있어야 한다 (설계서 v0.12 "불러올 때 C4 검사")
             if (!parts.Stages.Has(d.Stage)) errors.Add("progress.stage: 스테이지 표에 없는 " + d.Stage);
             if (!parts.Stages.Has(d.LeaveStage)) errors.Add("offline.leaveStage: 스테이지 표에 없는 " + d.LeaveStage);
